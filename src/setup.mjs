@@ -125,3 +125,15 @@ export async function setup({repo, host = 'both'}) {
   return {status:'configured-not-connected',files:targets.map(relative => path.join(repo,relative)),repo,
     note:'Restart or open the trusted project in the host and follow its MCP trust prompt. No global config or account was changed.'};
 }
+
+// Reuse setup's preflight and atomic file replacement for user-level settings.
+export async function updateSetupFiles(root, relatives, build) {
+  const entries = await snapshots(root, relatives);
+  const outputs = await build(relative => entries.get(path.join(root, relative)).text);
+  for (const [file, snapshot] of entries) await verify(file, snapshot);
+  const created = new Map();
+  for (const [relative, text] of outputs) {
+    const file = path.join(root, relative);
+    if (entries.get(file).text !== text) await install(root, file, text, entries, created);
+  }
+}

@@ -8,27 +8,26 @@
 
 ## インストール
 
-Node.js 22以上とGitが必要です。パッケージ公開前は、信頼できるソースからインストールしてください。リポジトリへのアクセスは現在の公開設定に従います。
+Node.js 22以上とGitが必要です。macOS/Linuxで一度インストールします。
 
 ```sh
 git clone https://github.com/PresentJay/code-doctor.git
 cd code-doctor
 npm ci --ignore-scripts --no-fund
-CODE_DOCTOR_HOME="$PWD"
-mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.agents/skills/"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.claude/skills/"
+node bin/code-doctor.mjs install --host both
 ```
 
-macOS/Linuxではユーザーのskillフォルダーに一度リンクすれば、複数のプロジェクトで同じCLIを使えます。一方のホストだけなら、そのリンクだけを作成してください。同名の項目は上書きされないため、既存のインストールを先に確認します。チェックアウトと依存関係を維持し、skillのファイルだけをコピーしないでください。Windowsや別のホストについては[英語のインストール手順](../../README.md#install-from-source)を参照してください。
+インストーラーは既存設定を保ちながら、ユーザーのフックとskillを登録します。一方だけなら`--host codex`または`--host claude`を指定してください。ソースと依存関係を維持してください。編集済みの既存設定は上書きしません。
 
-skillは実際の作業リポジトリを確認して`--repo`を指定し、非公開のレビュー資料をローカルGit除外ファイルで保護します。プロジェクトごとのMCP設定やskillは不要です。表示されない場合はホストを再起動してください。リンクの作成だけでは、実行中のエージェントがskillを読み込んだ証明にはなりません。
+新しいセッションを開始してください。Codexでは最初に一度、`/hooks`でフックを確認して信頼する必要があります。有効化後は普段どおり開発を依頼すると、Gitリポジトリで自動的に案内します。毎回Code Doctorを呼ぶ必要はありません。Conductorなどでは、エージェントのユーザーフックを読み込む場合に限り動作します。Windowsの自動インストールは未対応です。
+
+「このリポジトリではCode Doctorをオフにして」「この会話ではオフにして」「すべてオフにして」と依頼し、同じ範囲で再びオンにできます。「この作業だけ省略」は現在の作業だけに適用します。直接操作する場合は`node bin/code-doctor.mjs disable --repo PATH`または`enable --repo PATH`を使います。全体は`--scope global`、状態確認は`status --repo PATH`です。より広い範囲の無効設定が優先され、設定はユーザーフォルダーに保存されます。
 
 プロジェクト別のMCP接続を希望する場合は[任意の設定手順](../../README.md#optional-project-mcp-connection)に従ってください。生成ファイルにはマシン固有の絶対パスが入り、Gitの変更一覧に現れる場合があります。共有済みの設定全体を隠さないでください。CLIの`capture`は変更一覧だけを作成します。説明付きのguideを読む前に、現在のエージェントが`plan`を準備します。
 
 ## 使い方
 
-> 今回の変更をCode Doctorで整理して。コードを読んで、複数の意見をまとめて返したい。
+普段どおり開発を依頼してください。例：「カートが空の場合の合計計算を修正して」。作業中は重要な範囲の変更を知らせ、完了時には説明と実際のコードをまとめて提示します。
 
 エージェントは元の依頼・作業の種類・関連要件を確認し、全体説明、読む順序、実際のコードと全変更一覧を一度に用意します。実際に利用できるネイティブ画面を使い、使えなければ全ブロックを一つの応答に表示します。複数の行コメントをまとめて送るか、ブロック名を指定して一括修正を依頼してください。
 

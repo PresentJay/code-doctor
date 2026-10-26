@@ -8,27 +8,26 @@
 
 ## 설치
 
-Node.js 22 이상과 Git이 필요합니다. 패키지 게시 전에는 신뢰하는 소스에서 설치합니다. 저장소 접근은 현재 공개 범위에 따릅니다.
+Node.js 22 이상과 Git이 필요합니다. macOS/Linux에서 한 번 설치합니다.
 
 ```sh
 git clone https://github.com/PresentJay/code-doctor.git
 cd code-doctor
 npm ci --ignore-scripts --no-fund
-CODE_DOCTOR_HOME="$PWD"
-mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.agents/skills/"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.claude/skills/"
+node bin/code-doctor.mjs install --host both
 ```
 
-macOS/Linux에서는 사용자 스킬 폴더에 한 번 연결하면 여러 프로젝트에서 같은 CLI를 씁니다. 한 호스트만 쓰면 해당 연결만 만드세요. 같은 이름이 이미 있으면 덮어쓰지 않으므로 기존 설치부터 확인합니다. 설치 폴더와 의존성을 유지하고, 스킬 파일만 복사하지 마세요. Windows와 별도 호스트의 연결 방식은 [영어 설치 안내](../../README.md#install-from-source)를 참고하세요.
+설치 명령은 사용자 훅과 스킬을 등록하고 기존 설정을 보존합니다. 한 에이전트만 쓰면 `--host codex` 또는 `--host claude`를 지정하세요. 설치 폴더와 의존성을 유지하세요. 수정된 기존 설치는 자동으로 덮어쓰지 않습니다.
 
-스킬이 실제 작업 저장소를 확인하고 `--repo`를 지정하며, 비공개 리뷰 자료는 로컬 Git 제외 파일로 보호합니다. 프로젝트마다 MCP 설정이나 스킬을 만들 필요가 없습니다. 스킬이 나타나지 않으면 호스트를 다시 시작하세요. 연결 파일 생성만으로 실행 중인 에이전트가 읽었다고 볼 수는 없습니다.
+새 세션을 시작하세요. Codex는 최초 한 번 `/hooks`에서 훅 신뢰 승인이 필요합니다. 활성화 후에는 평소처럼 개발을 요청하면 Git 저장소에서 자동으로 안내합니다. Code Doctor를 매번 부르거나 레포마다 설치할 필요가 없습니다. Conductor 등은 에이전트의 사용자 훅을 읽는 경우에만 자동 연결됩니다. Windows 자동 설치는 아직 지원하지 않습니다.
+
+“이 레포에서는 Code Doctor 꺼줘”, “이 대화에서는 꺼줘”, “전체에서 꺼줘”로 중단하고 같은 범위에서 다시 켤 수 있습니다. “이번 작업만 빼줘”는 현재 작업에만 적용합니다. 직접 제어하려면 `node bin/code-doctor.mjs disable --repo PATH` 또는 `enable --repo PATH`를 사용합니다. 전체 설정은 `--scope global`, 상태 확인은 `status --repo PATH`입니다. 더 넓은 범위의 끄기 설정이 우선합니다. 설정은 사용자 폴더에 저장됩니다.
 
 프로젝트별 MCP 연결을 원하면 [선택 설치](../../README.md#optional-project-mcp-connection)를 따르세요. 생성되는 설정에는 기계별 절대 경로가 들어가고 Git 변경에 나타날 수 있습니다. 기존 공유 설정을 통째로 숨기지 마세요. CLI의 `capture`는 변경 목록만 만들며, 설명이 담긴 가이드는 현재 에이전트가 `plan`을 준비한 뒤 읽습니다.
 
 ## 사용
 
-> 이번 변경을 Code Doctor로 정리해 줘. 코드를 읽고 여러 의견을 한 번에 줄게.
+평소처럼 개발을 요청하세요. 예: “장바구니가 비었을 때 합계 계산을 고쳐줘.” 작업 중 중요한 범위 변경을 알리고, 결과에서는 설명과 실제 코드를 한 번에 보여줍니다.
 
 에이전트가 원래 요청·작업 종류·관련 요구를 확인한 뒤 총평, 읽을 순서, 실제 코드와 전체 목록을 한 번 준비합니다. 실제 지원되는 네이티브 화면을 쓰고, 없으면 모든 블록을 한 응답에 보여줍니다. 여러 줄 의견을 모아 보내거나 블록 이름을 지목해 함께 수정하도록 요청하세요.
 

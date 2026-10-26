@@ -1,11 +1,19 @@
 ---
 name: code-doctor
-description: Guide a person through agent-made Git changes in meaningful blocks, explain how they relate to the request, and capture precise feedback. Use when reviewing or explaining a completed change or checking whether implementation exceeded the requested scope.
+description: Guide a person through agent-made Git changes in meaningful blocks, explain how they relate to the request, and capture precise feedback. Use automatically during development and when explaining completed changes; also use when the person asks to disable, enable or inspect Code Doctor guidance.
 ---
 
 # Code Doctor
 
 Help the person understand the changed code and give a short, precise next instruction inside their existing agent workflow. Prepare the complete reading plan once; ordinary navigation must not require another model turn. Use English when no language preference is known. Follow the person’s language for explanations and feedback, including English, Korean, Japanese and Simplified Chinese. Preserve code, paths, IDs and the original feedback text. Do not turn every small edit into a long report or require an approval on every block.
+
+## Automatic guidance and controls
+
+After the one-time user installation and host activation, apply this skill to ordinary development requests without asking the person to invoke it. First resolve the CLI as described below and check `status --repo PATH`, including `--session ID` when the current hook supplies one. Honor a disabled scope; do not start a reading guide merely because the skill was discovered. An explicit request to explain code can still be answered normally without enabling persistent guidance.
+
+Before editing, confirm the task repository, comparison and pre-existing changes. Read relevant requirements and roadmap context once, then reuse it unless it changes. During work, briefly explain consequential scope decisions or departures from the request. At completion, prepare the whole ordered reading guide once, proportionate to the change. On first use in a conversation, mention that automatic guidance is active and can be turned off. Do not repeat the introduction, add a model turn to navigate, or report unrelated questions as development work.
+
+When asked to disable or enable Code Doctor, use `disable` or `enable` with `--scope repo` (default), `--scope global`, or `--scope session --session ID`. Always use the verified `--repo` for repository/session controls. Use only the actual session ID supplied by the host hook; never invent it. “Skip this task/turn” is a conversational override, not a persistent repository change. Read the resulting status and explain any broader disable still in effect. Do not edit host settings to implement opt-outs. A disabled hook stays quiet, but this discoverable skill and direct CLI controls remain available for re-enabling.
 
 ## Establish the task
 
@@ -14,7 +22,7 @@ Use the current task's verified context: the repository's AGENTS.md, Issue or ex
 
 ## Capture and organize actual changes
 
-Resolve the current task's Git root from its actual working files with `git -C PATH rev-parse --show-toplevel`. For the user-level source link, run the bundled `scripts/code-doctor.mjs` beside this skill with `node` and always pass the verified absolute `--repo`. Keep the whole skill folder linked to its runtime rather than copying it alone. Other installations may supply only the skill text: use a configured MCP server only after verifying its startup repository matches this task, or use an already installed `code-doctor --help` or verified absolute `bin/code-doctor.mjs` entrypoint. Do not infer the repository from this skill or the GUI process directory, or run project setup just to review another project.
+Resolve the current task's Git root from its actual working files with `git -C PATH rev-parse --show-toplevel`. If this installed skill provides an absolute CLI command, use that command. Otherwise, for a source checkout or user-level source link, run the bundled `scripts/code-doctor.mjs` beside this skill with `node` and always pass the verified absolute `--repo`. Keep the whole skill folder linked to its runtime rather than copying it alone. Other installations may supply only the skill text: use a configured MCP server only after verifying its startup repository matches this task, or use an already installed `code-doctor --help` or verified absolute `bin/code-doctor.mjs` entrypoint. Do not infer the repository from this skill or the GUI process directory, or run project setup just to review another project.
 
 Before the first saved review, verify `.code-doctor/` is untracked and ignored. If it is not ignored, resolve the local exclude file with `git -C REPO rev-parse --path-format=absolute --git-path info/exclude` and append `/.code-doctor/` once, preserving existing content and a newline before the entry. Recheck ignore behavior; refuse tracked storage or conflicting rules rather than overriding them. Keep temporary plan/context JSON in the OS temporary directory or that verified ignored folder. This path does not need project-local MCP settings or skills.
 

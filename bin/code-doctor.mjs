@@ -18,6 +18,11 @@ const help = `Code Doctor 0.1.0-rc.2 (Node >=22, Git required)
   resolve  --repo PATH --feedback ID --version N --review ID --resolution addressed|dismissed --note TEXT
   mcp      --repo PATH                   (stdio; no model API key)
   serve    --repo PATH [--port 0]         (optional web review, only on request; keep running)
+  install  [--host both|codex|claude]   (one-time user hooks + skill; automatic guidance)
+  status   --repo PATH [--session ID]
+  disable  --repo PATH [--scope repo|session|global --session ID]
+  enable   --repo PATH [--scope repo|session|global --session ID]
+  hook                                  (host stdin event; advisory context only)
   setup    --repo PATH --host both
   doctor   --repo PATH
 All CLI results are JSON. Errors go to stderr with a nonzero exit.
@@ -28,7 +33,7 @@ try {
     repo:{type:'string',default:process.cwd()}, base:{type:'string'},
     task:{type:'string'},kind:{type:'string'},issue:{type:'string'},context:{type:'string'},
     file:{type:'string'},review:{type:'string'},block:{type:'string'},text:{type:'string'},
-    host:{type:'string',default:'both'},
+    host:{type:'string',default:'both'},scope:{type:'string',default:'repo'},session:{type:'string'},
     feedback:{type:'string'},version:{type:'string'},resolution:{type:'string'},note:{type:'string'},state:{type:'string',default:'pending'},
     view:{type:'string'},port:{type:'string',default:'0'},help:{type:'boolean',short:'h'},
   }});
@@ -38,7 +43,13 @@ try {
   else {
     const cwd = path.resolve(values.repo);
     let result;
-    if (command === 'mcp') {
+    if (['install','status','enable','disable','hook'].includes(command)) {
+      const auto = await import('../src/automatic.mjs');
+      if (command === 'install') result = await auto.installAutomatic({host:values.host});
+      else if (command === 'hook') await auto.runAutomaticHook();
+      else if (command === 'status') result = await auto.automaticStatus({repo:cwd,session:values.session});
+      else result = await auto.setAutomatic({repo:cwd,session:values.session,scope:values.scope,enabled:command === 'enable'});
+    } else if (command === 'mcp') {
       const {startMcp} = await import('../src/mcp.mjs'); await startMcp(cwd);
     } else if (command === 'serve') {
       const {startReviewServer} = await import('../src/viewer.mjs');

@@ -21,6 +21,7 @@ try { files = JSON.parse(execFileSync('npm',['pack','--dry-run','--json','--igno
 finally { await rm(cache,{recursive:true,force:true}); }
 assert.ok(files.includes('bin/code-doctor.mjs') && files.includes('src/review.mjs') && files.includes('src/mcp.mjs'));
 assert.ok(files.includes('src/reading.mjs'));
+assert.ok(files.includes('src/automatic.mjs') && files.includes('src/setup.mjs'));
 assert.ok(files.includes('skills/code-doctor/scripts/code-doctor.mjs'));
 execFileSync(process.execPath,['skills/code-doctor/scripts/code-doctor.mjs','--help']);
 for (const asset of ['index.html','style.css','app.mjs']) assert.ok(files.includes(`web/${asset}`), `Missing viewer asset: ${asset}`);
