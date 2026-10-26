@@ -40,7 +40,7 @@ node bin/code-doctor.mjs enable --scope global
 node bin/code-doctor.mjs status --repo "$PROJECT"
 ```
 
-Session controls add `--scope session --session ID` using the actual session ID supplied by the hook. Broader opt-outs take precedence: enabling one repository does not override a global disable. Preferences live in `~/.config/code-doctor/settings.json`, outside project source. To remove the installation entirely, remove its hook entry and user skill from each host before removing the checkout; preserve other hooks.
+Session controls add `--scope session --session ID` using the actual session ID supplied by the hook. Repository/session opt-outs retain only control context so the agent can re-enable the exact scope on request and check a different task repository independently; they do not start a reading guide for the disabled target. Global disable suppresses all hook context. Broader opt-outs take precedence: enabling one repository does not override a global disable. Preferences live in `~/.config/code-doctor/settings.json`, outside project source. To remove the installation entirely, remove its hook entry and user skill from each host before removing the checkout; preserve other hooks.
 
 ### Optional project MCP connection
 

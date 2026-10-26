@@ -119,7 +119,14 @@ export async function runAutomaticHook() {
     const session = typeof event.session_id === 'string' ? event.session_id : undefined;
     let repo;
     try { repo = await rootOf(cwd); } catch { /* The task may target a child or another repository. */ }
-    if (repo && !state(value,repo,session).enabled) return;
+    const current = repo ? state(value,repo,session) : null;
+    if (current && !current.enabled) {
+      const additionalContext = `[Code Doctor — controls only]
+Guidance is disabled by ${current.disabledBy} for the conversation directory's repository ${JSON.stringify(repo)}. Keep Code Doctor reading and capture off for that target, and do not announce this control context. The working directory does not identify every task: if development targets a different repository, resolve it from actual task files and run ${command('status')} --repo ABSOLUTE_TASK_REPO${session ? ' --session '+quote(session) : ''} before applying guidance there. Do not scan unrelated directories. For an enabled target, read ${JSON.stringify(skill)} and deliver the complete ordered guide with actual code in the same final response. Disabled targets remain off.
+Only when the person explicitly asks to re-enable the disabled scope, run ${command('enable','--repo',repo,'--scope',current.disabledBy,...(session ? ['--session',session] : []))}. Use the scope the person requested; do not override broader disables. Verify the returned status before claiming guidance is active. The host session ID is ${JSON.stringify(session ?? null)}; never invent one. No browser, automatic re-enabling, extra model turn or approval is required.`;
+      process.stdout.write(encode({hookSpecificOutput:{hookEventName:'UserPromptSubmit',additionalContext}}));
+      return;
+    }
     if (!repo) {
       const additionalContext = `[Code Doctor — discover the development repository]
 This conversation started outside a resolved Git repository. For development only, resolve the actual task repository from files you are working on; do not scan unrelated folders, guess from this installation, or ask for a path already known from the task. Before reading project source for Code Doctor or creating a review, run ${command('status')} --repo ABSOLUTE_TASK_REPO${session ? ' --session '+quote(session) : ''}. Honor disabled scopes. If enabled, read ${JSON.stringify(skill)} and apply it automatically in this same turn: establish the comparison and pre-existing changes before editing, then deliver the complete ordered guide with actual code at completion. If several repositories are involved, check each separately. Do not create a Git repository or project configuration for guidance. Stay quiet for non-development requests or when no task repository exists. Do not announce activation before status succeeds. A successful hook is not evidence that a guide was delivered. No browser, per-block approval, or extra model turn is required.`;

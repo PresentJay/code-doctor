@@ -23,7 +23,7 @@ node bin/code-doctor.mjs install --host both
 
 即使会话从 Git 仓库外开始，也会根据实际工作文件确定仓库，并遵守该仓库和会话的启用或停用设置。在同一轮最终回复前检查是否遗漏代码说明。hook 成功不代表说明已经送达，也不会通过结束 hook 再次运行代理。
 
-可以说“在这个仓库关闭 Code Doctor”“在这个会话关闭”或“全部关闭”，也可以在相同范围重新开启。“这次任务跳过”只影响当前任务。直接控制使用 `node bin/code-doctor.mjs disable --repo PATH` 或 `enable --repo PATH`。全局使用 `--scope global`，查询状态使用 `status --repo PATH`。更大范围的关闭设置优先，偏好保存在用户目录中。
+可以说“在这个仓库关闭 Code Doctor”“在这个会话关闭”或“全部关闭”，也可以在相同范围重新开启。“这次任务跳过”只影响当前任务。直接控制使用 `node bin/code-doctor.mjs disable --repo PATH` 或 `enable --repo PATH`。全局使用 `--scope global`，查询状态使用 `status --repo PATH`。更大范围的关闭设置优先，偏好保存在用户目录中。 在仓库或会话中停用后，仍保留供明确请求重新启用时使用的控制信息。不会为已停用的目标生成代码说明，其他工作仓库的设置会单独检查。全局停用后不再发送 hook 信息。
 
 需要项目级 MCP 连接时，按[可选配置说明](../../README.md#optional-project-mcp-connection)操作。生成的文件含有本机绝对路径，可能出现在 Git 更改清单中；不要把已跟踪或共享的配置整体隐藏。CLI 的`capture`仅创建原始更改清单，当前代理准备好`plan`后，才能读取带解释的 guide。
 
