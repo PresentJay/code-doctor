@@ -1,0 +1,14 @@
+node_modules/
+.code-doctor/
+work/
+.unlazy/
+.DS_Store
+.env
+.env.*
+!.env.example
+.mcp.json
+.codex/config.toml
+.claude/settings.local.json
+*.tgz
+.agents/skills/
+.claude/skills/

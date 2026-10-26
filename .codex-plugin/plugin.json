@@ -1,0 +1,11 @@
+{
+  "name": "code-doctor",
+  "version": "0.1.0-rc.2",
+  "description": "Read agent code changes in context and give precise feedback.",
+  "skills": "./skills/",
+  "author": {
+    "name": "PresentJay",
+    "url": "https://github.com/PresentJay"
+  },
+  "repository": "https://github.com/PresentJay/code-doctor"
+}

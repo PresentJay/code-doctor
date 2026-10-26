@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title data-i18n="Code Doctor · Code review">Code Doctor · Code review</title>
+    <link rel="stylesheet" href="/style.css">
+    <script type="module" src="/app.mjs"></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <h1>Code Doctor</h1>
+        <div class="language-control"><label for="language" data-i18n="Language">Language</label><select id="language"><option value="en">English</option><option value="ko">한국어</option><option value="ja">日本語</option><option value="zh-CN">简体中文</option></select></div>
+        <span class="muted" id="review-version" data-i18n="Code review">Code review</span>
+      </header>
+
+      <p id="loading" class="empty-state" role="status" data-i18n="Reading Git changes…">Reading Git changes…</p>
+      <div id="error" class="notice error-notice" hidden>
+        <p id="error-message"></p>
+        <button id="retry" type="button" data-i18n="Reconnect">Reconnect</button>
+      </div>
+      <p id="page-status" class="action-status" role="status" aria-live="polite" hidden></p>
+
+      <div id="review-content" hidden>
+        <div class="intro">
+          <p class="agent" id="agent-summary"></p>
+          <details id="task-context" class="context">
+            <summary id="context-label" data-i18n="Original request and criteria">Original request and criteria</summary>
+            <div class="context-content">
+              <p id="task-text" class="agent"></p>
+              <dl class="task-meta" id="task-meta"></dl>
+              <div id="context-details"></div>
+            </div>
+          </details>
+          <p class="muted" data-i18n="Navigation and code expansion need no model calls. Save opinions where needed and send them together.">Navigation and code expansion need no model calls. Save opinions where needed and send them together.</p>
+        </div>
+
+        <section id="batch-feedback" aria-label="Send collected opinions" data-i18n-aria-label="Send collected opinions" hidden>
+          <div class="actions">
+            <button id="copy-all-feedback" class="primary" type="button" disabled data-i18n="Copy all pending opinions">Copy all pending opinions</button>
+            <span id="batch-count" class="muted" role="status"></span>
+          </div>
+          <p id="batch-help" class="muted" data-i18n="Copy once and send to the original agent conversation when ready.">Copy once and send to the original agent conversation when ready.</p>
+          <p id="batch-status" class="action-status" role="status" aria-live="polite"></p>
+          <details class="feedback-section">
+            <summary data-i18n="View collected opinions">View collected opinions</summary>
+            <ol id="batch-list"></ol>
+          </details>
+          <div id="copy-fallback" hidden>
+            <label for="followup-text" class="muted" data-i18n="Select and copy the instruction below.">Select and copy the instruction below.</label>
+            <textarea id="followup-text" readonly rows="7"></textarea>
+          </div>
+        </section>
+
+        <div id="freshness-notice" class="notice" hidden>
+          <p id="freshness-message"></p>
+          <button id="recapture" type="button" data-i18n="Recapture current code">Recapture current code</button>
+        </div>
+        <div id="revision-notice" class="notice" hidden>
+          <p id="revision-message"></p>
+          <button id="open-latest" type="button" data-i18n="Open newer review">Open newer review</button>
+        </div>
+
+        <details id="inventory" class="inventory">
+          <summary id="inventory-label" data-i18n="All changes">All changes</summary>
+          <ol id="block-list"></ol>
+        </details>
+
+        <p id="empty-review" class="empty-state" hidden data-i18n="This review contains no code changes.">This review contains no code changes.</p>
+
+        <section id="selected-block" class="block" aria-labelledby="block-title" hidden oai-annotatable="Code change block" data-i18n-oai-annotatable="Code change block">
+          <div class="block-toolbar">
+            <p class="muted block-meta" id="block-meta"></p>
+            <nav class="block-nav" aria-label="Navigate code blocks" data-i18n-aria-label="Navigate code blocks">
+              <button id="previous" type="button" aria-label="Previous code block" data-i18n-aria-label="Previous code block" data-i18n="Previous">Previous</button>
+              <span id="block-step" class="muted"></span>
+              <button id="next" type="button" aria-label="Next code block" data-i18n-aria-label="Next code block" data-i18n="Next">Next</button>
+            </nav>
+          </div>
+          <h2 id="block-title" tabindex="-1"></h2>
+          <p class="agent block-comment" id="block-comment"></p>
+          <div id="diffs"></div>
+
+          <div class="opinion">
+            <label for="opinion" data-i18n="Instruction for this block">Instruction for this block</label>
+            <textarea id="opinion" rows="3" maxlength="4000" placeholder="Example: return an error here and keep the existing response format." data-i18n-placeholder="Example: return an error here and keep the existing response format." aria-describedby="opinion-help"></textarea>
+            <div class="actions">
+              <button id="save-feedback" type="button" data-i18n="Save opinion">Save opinion</button>
+              <button id="copy-followup" type="button" disabled data-i18n="Copy this opinion">Copy this opinion</button>
+              <button id="native-annotation" type="button" hidden data-i18n="Attach this block to the conversation">Attach this block to the conversation</button>
+            </div>
+            <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then copy them together above.">Save opinions on several blocks, then copy them together above.</p>
+            <p id="action-status" class="action-status" role="status" aria-live="polite"></p>
+            <div id="feedback-section" class="feedback-section" hidden>
+              <h3 data-i18n="Opinions on this block">Opinions on this block</h3>
+              <ol id="feedback-list"></ol>
+            </div>
+          </div>
+        </section>
+
+        <footer class="review-footer">
+          <div class="revision-row">
+            <label for="review-history" data-i18n="Review version">Review version</label>
+            <select id="review-history" aria-label="Choose review version" data-i18n-aria-label="Choose review version"></select>
+            <button id="previous-review" class="text-button" type="button" hidden data-i18n="Open previous review">Open previous review</button>
+            <button id="refresh-review" class="text-button" type="button" data-i18n="Review after changes">Review after changes</button>
+          </div>
+          <p class="muted" id="connection-status" data-i18n="Saving an opinion is not execution or approval.">Saving an opinion is not execution or approval.</p>
+        </footer>
+      </div>
+      <noscript><p class="notice" data-i18n="Enable JavaScript to read code changes.">Enable JavaScript to read code changes.</p></noscript>
+    </main>
+  </body>
+</html>

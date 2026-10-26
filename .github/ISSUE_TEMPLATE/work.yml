@@ -1,0 +1,36 @@
+name: Work item
+description: Define a problem, scope and observable result.
+title: ""
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Work kind
+      options: [Feature, Bug fix, Incident, Experiment, Research, Infrastructure]
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and current problem
+      description: Who experiences the problem, and what should change?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and exclusions
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Observable success and failure criteria
+      description: Describe behavior that can be checked, not only a test count.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Requirements, roadmap and relevant decisions
+      description: Link sources and explain their relevance. Do not copy private content or credentials.

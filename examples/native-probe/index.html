@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile loading change · Code reading connection probe</title>
+<style>
+:root { color-scheme: light dark; --bg:#f6f8fa; --paper:#fff; --ink:#24292f; --muted:#57606a; --border:#d0d7de; --focus:#ddf4ff; --accent:#0969da; }
+@media(prefers-color-scheme:dark) { :root { --bg:#161b22; --paper:#0d1117; --ink:#e6edf3; --muted:#9ca8b5; --border:#37414d; --focus:#153450; --accent:#79b8ff; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+main { max-width:1000px; padding:24px 28px 40px; margin:auto; }
+header { display:flex; justify-content:space-between; gap:12px; align-items:center; border-bottom:1px solid var(--border); padding-bottom:14px; }
+h1 { font-size:17px; font-weight:650; margin:0; }
+h2 { font-size:23px; line-height:1.4; margin:4px 0 10px; }
+p { margin:8px 0; }
+.muted { color:var(--muted); font-size:13px; }
+.intro { margin:20px 0 24px; }
+.agent { max-width:72ch; }
+.block { border-top:1px solid var(--border); padding-top:15px; }
+.row { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.nav { display:flex; gap:7px; align-items:center; flex-shrink:0; white-space:nowrap; }
+button, textarea { font:inherit; }
+button { border:1px solid var(--border); border-radius:6px; background:var(--paper); color:var(--ink); padding:7px 12px; cursor:pointer; }
+button:hover { background:var(--bg); }
+button:disabled { opacity:.45; cursor:default; }
+button.primary { background:var(--accent); color:var(--paper); border-color:var(--accent); font-weight:600; }
+button:focus-visible,textarea:focus-visible,summary:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+.source { border:1px solid var(--border); border-radius:6px; margin:18px 0 12px; overflow:hidden; }
+.source header { background:var(--bg); padding:8px 13px; font-size:12px; }
+.code { overflow-x:auto; padding:10px 0; font:12px/1.9 SFMono-Regular,Menlo,Consolas,monospace; }
+.line { display:flex; white-space:pre; min-width:max-content; padding-right:20px; }
+.line.selected { background:var(--focus); }
+.line-number { user-select:none; width:42px; flex-shrink:0; text-align:right; padding-right:14px; color:var(--muted); }
+.opinion { margin-top:20px; }
+textarea { display:block; width:100%; min-height:74px; resize:vertical; padding:10px; margin:8px 0 10px; color:var(--ink); background:var(--paper); border:1px solid var(--border); border-radius:6px; }
+.status { min-height:24px; font-size:13px; margin-top:12px; }
+.notice { padding:10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg); margin:15px 0; }
+details { margin-top:15px; }
+summary { cursor:pointer; color:var(--muted); font-size:13px; }
+.actions { display:flex; gap:8px; flex-wrap:wrap; }
+[hidden] { display:none !important; }
+@media(max-width:600px) { main { padding:18px 16px; } h2 { font-size:21px; } header { align-items:flex-start; } .code { font-size:11px; } .row { flex-wrap:wrap; } .nav { margin-left:auto; } .line { white-space:pre-wrap; min-width:0; } .line > span:last-child { min-width:0; overflow-wrap:anywhere; } }
+</style>
+<main>
+  <header><h1>Profile loading change</h1><span class="muted">Connection probe fixture</span></header>
+  <div class="intro"><p class="muted">Original request</p><p id="task"></p><p class="agent" id="summary"></p></div>
+  <div id="stale" class="notice" hidden>The source changed. This explanation and selection describe an older version. <button id="refresh">Read current source</button></div>
+  <section class="block" id="block" oai-annotatable="Code change block">
+    <div class="row"><span class="muted" id="relation"></span><div class="nav"><button id="prev" aria-label="Previous block">Previous</button><span id="step" class="muted"></span><button id="next" aria-label="Next block">Next</button></div></div>
+    <h2 id="title"></h2><p id="explanation" class="agent"></p>
+    <div class="source"><header><span>fixture/profile.mjs</span><span id="version"></span></header><div class="code" id="code" aria-label="Current source with highlighted lines"></div></div>
+    <details><summary>Show previous source</summary><div class="code" id="before"></div></details>
+  </section>
+  <div class="opinion"><label for="opinion">Feedback on this block</label><textarea id="opinion" maxlength="4000"></textarea>
+    <div class="actions"><button class="primary" id="native" hidden>Attach this block to the Codex conversation</button><button id="save">Save feedback to a file</button></div>
+    <p class="muted" id="connection"></p><p class="status" id="status" role="status" aria-live="polite"></p>
+  </div>
+  <details><summary>Probe scope and connection status</summary><p class="muted">Code and line numbers come from the local fixture. Explanations were written for this probe. Saving a feedback file does not send it to the agent. The native button requests a feedback composer; the person sends the message.</p><p class="muted" id="capability"></p></details>
+</main>
+<script type="module">
+const $ = id => document.getElementById(id);
+let review, index = 0;
+const draft = new Map();
+const annotation = document.oai?.annotation;
+const canRequest = typeof annotation?.request === 'function';
+async function post(route, data) {
+  const response = await fetch('/api/' + route, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+  return result;
+}
+function renderCode(target, code, start = 0, end = 0) {
+  target.replaceChildren(...code.trimEnd().split('\n').map((text, i) => {
+    const line = document.createElement('div');
+    line.className = 'line' + (i + 1 >= start && i + 1 <= end ? ' selected' : '');
+    const number = document.createElement('span'); number.className = 'line-number'; number.textContent = i + 1;
+    const content = document.createElement('span'); content.textContent = text;
+    line.append(number, content); return line;
+  }));
+}
+function render() {
+  const block = review.blocks[index];
+  $('task').textContent = review.task; $('summary').textContent = review.summary;
+  $('relation').textContent = block.relation; $('title').textContent = block.title;
+  $('explanation').textContent = block.explanation; $('step').textContent = `${index + 1} / ${review.blocks.length}`;
+  $('version').textContent = `Reviewed version ${review.revision.slice(0,8)}`;
+  $('prev').disabled = index === 0; $('next').disabled = index === review.blocks.length - 1;
+  $('opinion').value = draft.get(block.id) ?? block.suggested;
+  renderCode($('code'), review.code, block.start, block.end); renderCode($('before'), review.before);
+  $('block').setAttribute('oai-annotation-metadata', JSON.stringify({review_id:review.reviewId,block_id:block.id,revision:review.revision,file:review.file,lines:`${block.start}-${block.end}`,task:review.task}));
+  applyStale(review.stale);
+}
+function applyStale(stale) {
+  review.stale = stale; $('stale').hidden = !stale;
+  $('native').disabled = stale; $('save').disabled = stale;
+}
+function move(offset) { draft.set(review.blocks[index].id, $('opinion').value); index += offset; $('status').textContent = ''; render(); }
+$('prev').onclick = () => move(-1); $('next').onclick = () => move(1);
+$('native').hidden = !canRequest;
+$('connection').textContent = canRequest ? 'Attach the selected code and feedback, then send it in the original conversation.' : 'A conversation connection is unavailable in this browser. Save feedback to a file for the same agent to read.';
+$('capability').textContent = `Native feedback API: ${canRequest ? 'available' : 'unavailable'}`;
+$('native').onclick = () => {
+  if (!review || review.stale) return;
+  const text = $('opinion').value.trim();
+  if (!text) { $('status').textContent = 'Enter feedback for this block.'; return; }
+  if (text.length > 240) {
+    $('status').textContent = 'Keep attached feedback within 240 characters. Save longer feedback to a file.';
+    return;
+  }
+  try {
+    // The host requires a direct user gesture; do not await a request before this call.
+    const result = annotation.request($('block'), {initialComment:text,metadata:JSON.parse($('block').getAttribute('oai-annotation-metadata'))});
+    $('status').textContent = result?.accepted ? 'The feedback composer request was accepted. Review and send it in the composer; delivery is not confirmed.' : 'The app did not accept the composer request. Save feedback to a file to continue.';
+    post('probe', {kind:'annotation-request',requestAvailable:canRequest,accepted:result?.accepted === true,blockId:review.blocks[index].id}).catch(() => {});
+  } catch (error) { $('status').textContent = `Could not open the feedback composer: ${error.message}`; }
+};
+$('save').onclick = async () => {
+  try {
+    const result = await post('feedback', {blockId:review.blocks[index].id,revision:review.revision,text:$('opinion').value});
+    $('status').textContent = `Saved locally; not sent to the agent. File: ${result.file}`;
+  } catch (error) { $('status').textContent = error.message; }
+};
+$('refresh').onclick = async () => {
+  try { review = await post('refresh', {}); draft.clear(); render(); $('status').textContent = 'Read the current file again.'; }
+  catch (error) { $('status').textContent = error.message; }
+};
+try {
+  const response = await fetch('/api/review'); if (!response.ok) throw new Error('Could not read the example source.');
+  review = await response.json(); render();
+  await post('probe', {kind:'capabilities',requestAvailable:canRequest});
+} catch (error) { $('status').textContent = error.message; }
+setInterval(async () => {
+  if (!review || document.hidden) return;
+  try { const response = await fetch('/api/review'); if (response.ok) applyStale((await response.json()).stale); }
+  catch { $('connection').textContent = 'The local server disconnected. Save and connection status are unavailable.'; $('native').disabled = true; $('save').disabled = true; }
+}, 3000);
+</script>
+</html>

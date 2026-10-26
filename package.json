@@ -1,0 +1,54 @@
+{
+  "name": "@presentjay/code-doctor",
+  "version": "0.1.0-rc.2",
+  "description": "Read agent code changes in context, then give precise feedback in the same workflow.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "code-doctor": "bin/code-doctor.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "skills",
+    "docs",
+    "ops",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs examples/native-probe/check.test.mjs",
+    "check": "npm test && node scripts/check-package.mjs",
+    "doctor": "node bin/code-doctor.mjs doctor",
+    "mcp": "node bin/code-doctor.mjs mcp",
+    "demo": "node examples/native-probe/server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PresentJay/code-doctor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PresentJay/code-doctor/issues"
+  },
+  "homepage": "https://github.com/PresentJay/code-doctor#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

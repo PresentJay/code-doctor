@@ -1,0 +1,30 @@
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    # Public contributions must never execute on private infrastructure.
+    if: ${{ !github.event.repository.private || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","linux","x64","code-doctor"]') || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts --no-fund
+      - run: npm run check
