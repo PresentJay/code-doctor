@@ -33,7 +33,7 @@ test('one installation preserves settings and its actual commands guide ordinary
  }
  for(const host of ['.agents','.claude'])assert.match(await readFile(path.join(f.home,host,'skills/code-doctor/SKILL.md'),'utf8'),/Do not resolve a sibling launcher/);
  assert.equal(execFileSync('git',['-C',f.repo,'status','--porcelain'],{encoding:'utf8'}),'');
- assert.equal(f.hook(f.dir),'');assert.equal(f.hook(f.repo,'abc',{hook_event_name:'Stop'}),'');
+ assert.match(f.hook(f.dir),/discover the development repository/);assert.equal(f.hook(f.repo,'abc',{hook_event_name:'Stop'}),'');
 });
 test('repository, session and global controls persist and installation never resets opt-outs',async t=>{
  const f=await fixture(t);f.cli('install');assert.ok(f.hook());
@@ -84,4 +84,21 @@ test('Git roots with trailing spaces are preserved exactly',async t=>{
  const f=await fixture(t),repo=path.join(f.dir,'project with trailing space ');await mkdir(repo);execFileSync('git',['init','-q',repo]);
  f.cli('install');assert.equal(f.cli('status','--repo',repo).repo,repo);assert.ok(f.hook(repo));
  f.cli('disable','--repo',repo);assert.equal(f.hook(repo),'');
+});
+
+
+test('a non-Git start defers to the actual repository and session controls without scanning or writing projects',async t=>{
+ const f=await fixture(t);f.cli('install');
+ f.cli('disable','--repo',f.repo,'--scope','session','--session','session-a');
+ const context=JSON.parse(f.hook(f.dir)).hookSpecificOutput.additionalContext;
+ assert.match(context,/status/);assert.match(context,/--repo ABSOLUTE_TASK_REPO/);assert.match(context,/--session 'session-a'/);
+ assert.equal(f.cli('status','--repo',f.repo,'--session','session-a').enabled,false);
+ assert.equal(f.cli('status','--repo',f.other,'--session','session-a').enabled,true);
+ assert.equal(execFileSync('git',['-C',f.repo,'status','--porcelain'],{encoding:'utf8'}),'');
+ f.cli('disable','--scope','global');assert.equal(f.hook(f.dir),'');
+ f.cli('enable','--scope','global');assert.ok(f.hook(f.dir));
+ assert.equal(f.hook(path.join(f.dir,'missing')),'');
+ const file=path.join(f.dir,'file');await writeFile(file,'not a directory');assert.equal(f.hook(file),'');
+ assert.equal(f.hook(f.dir,'abc',{hook_event_name:'Stop'}),'');
+ await writeFile(path.join(f.home,'.config/code-doctor/settings.json'),'broken');assert.equal(f.hook(f.dir),'');
 });
