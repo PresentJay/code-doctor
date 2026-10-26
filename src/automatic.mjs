@@ -34,7 +34,7 @@ async function loadSettings() {
 }
 async function rootOf(repo) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-  return realpath(execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], {encoding:'utf8',stdio:'pipe',env,timeout:1500}).trimEnd());
+  return realpath(execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], {encoding:'utf8',stdio:'pipe',env,timeout:1500}).replace(/\n$/, ''));
 }
 function state(value, repo, session) {
   const disabledBy = !value.enabled ? 'global' : value.repositories[hash(repo)] === false ? 'repo' :

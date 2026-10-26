@@ -79,3 +79,9 @@ test('custom Claude config directory receives both the hook and discoverable ski
  assert.match(await readFile(path.join(f.env.CLAUDE_CONFIG_DIR,'skills/code-doctor/SKILL.md'),'utf8'),/Automatic guidance/);
  await assert.rejects(readFile(path.join(f.home,'.codex/hooks.json')),/ENOENT/);
 });
+
+test('Git roots with trailing spaces are preserved exactly',async t=>{
+ const f=await fixture(t),repo=path.join(f.dir,'project with trailing space ');await mkdir(repo);execFileSync('git',['init','-q',repo]);
+ f.cli('install');assert.equal(f.cli('status','--repo',repo).repo,repo);assert.ok(f.hook(repo));
+ f.cli('disable','--repo',repo);assert.equal(f.hook(repo),'');
+});
