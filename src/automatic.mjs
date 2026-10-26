@@ -112,11 +112,22 @@ export async function runAutomaticHook() {
     for await (const chunk of process.stdin) { input += chunk; if (input.length > 1024*1024) return; }
     const event = JSON.parse(input);
     if (event?.hook_event_name !== 'UserPromptSubmit' || typeof event.cwd !== 'string') return;
-    const repo = await rootOf(event.cwd), session = typeof event.session_id === 'string' ? event.session_id : undefined;
-    const current = state(await loadSettings(),repo,session);
-    if (!current.enabled) return;
+    const value = await loadSettings();
+    if (!value.enabled) return;
+    const cwd = await realpath(event.cwd);
+    if (!(await lstat(cwd)).isDirectory()) return;
+    const session = typeof event.session_id === 'string' ? event.session_id : undefined;
+    let repo;
+    try { repo = await rootOf(cwd); } catch { /* The task may target a child or another repository. */ }
+    if (repo && !state(value,repo,session).enabled) return;
+    if (!repo) {
+      const additionalContext = `[Code Doctor — discover the development repository]
+This conversation started outside a resolved Git repository. For development only, resolve the actual task repository from files you are working on; do not scan unrelated folders, guess from this installation, or ask for a path already known from the task. Before reading project source for Code Doctor or creating a review, run ${command('status')} --repo ABSOLUTE_TASK_REPO${session ? ' --session '+quote(session) : ''}. Honor disabled scopes. If enabled, read ${JSON.stringify(skill)} and apply it automatically in this same turn: establish the comparison and pre-existing changes before editing, then deliver the complete ordered guide with actual code at completion. If several repositories are involved, check each separately. Do not create a Git repository or project configuration for guidance. Stay quiet for non-development requests or when no task repository exists. Do not announce activation before status succeeds. A successful hook is not evidence that a guide was delivered. No browser, per-block approval, or extra model turn is required.`;
+      process.stdout.write(encode({hookSpecificOutput:{hookEventName:'UserPromptSubmit',additionalContext}}));
+      return;
+    }
     const additionalContext = `[Code Doctor — automatic development guidance]
-For development work in ${JSON.stringify(repo)}, use Code Doctor automatically; the user need not name it. Read ${JSON.stringify(skill)} before editing. Establish the actual task repository, comparison commit, existing changes, request and relevant roadmap context. If the task targets another repository, check its status first. Explain consequential scope changes during work, then present all ordered blocks with actual code together at completion. Keep small work short; no per-block turns, browser, background model calls, or review-approval ritual. Stay quiet for unrelated questions and already-explained unchanged work. On first use in this conversation, briefly say guidance is enabled and can be turned off; do not repeat onboarding.
+For development work in ${JSON.stringify(repo)}, use Code Doctor automatically; the user need not name it. Read ${JSON.stringify(skill)} before editing. Establish the actual task repository, comparison commit, existing changes, request and relevant roadmap context. Before applying guidance, check status for every actual task repository, including the current session; the conversation directory is only a hint. Explain consequential scope changes during work, then present all ordered blocks with actual code together at completion. Before the final response, verify that all task changes are accounted for and that the response itself contains the guide with actual code; hook success or a saved guide alone is not delivery. Keep small work short; no per-block turns, browser, background model calls, or review-approval ritual. Stay quiet for unrelated questions and already-explained unchanged work. On first use in this conversation, briefly say guidance is enabled and can be turned off; do not repeat onboarding.
 Controls: ${command('status','--repo',repo,...(session ? ['--session',session] : []))}. If the user asks to turn guidance off/on, run the corresponding disable/enable command with --repo ${quote(repo)} and --scope repo (this repository), global (everywhere), or session --session ${quote(session ?? '')} (this conversation). For only this task/turn, honor the request in conversation without changing persistent preferences. Do not override a disabled scope, require Code Doctor invocation, or change files just to produce a review. Follow ordinary permission and merge rules.`;
     process.stdout.write(encode({hookSpecificOutput:{hookEventName:'UserPromptSubmit',additionalContext}}));
   } catch { /* Optional guidance must not block development. */ }
