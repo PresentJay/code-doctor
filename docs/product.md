@@ -2,6 +2,8 @@
 
 Help a person understand agent-made code and steer the work with a short, precise instruction inside the workflow they already use.
 
+Install once at user level and provide guidance automatically for development in Git repositories after host activation. Do not require the user to name Code Doctor or configure every repository. Explain important scope decisions during work and prepare the result afterward. Let the person disable guidance for a task, conversation, repository or globally, and enable it again. Keep unrelated questions quiet.
+
 Prepare the entire reading guide once: an overall comment, behavior-based blocks, actual code and the complete change inventory. Order consequential changes and scope decisions first, then the context needed to understand them. Scrolling, opening code and choosing another prepared block must not require another model turn. Several comments should lead to one correction and re-review cycle.
 
 Claude Code and Codex are the initial agents. A host app, IDE, CLI or wrapper may expose different native surfaces. Prefer a surface actually documented or supplied in the current session; otherwise provide all blocks together in the conversation. Open the local web viewer only on an explicit request. A skill or MCP installation does not imply a native panel, custom next/highlight controls, reordered host diffs or automatic message delivery.

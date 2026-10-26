@@ -10,37 +10,44 @@ This is an early preview. It uses local Git and the agent you already run; it do
 
 ## Install from source
 
-Requires Node.js 22 or newer and Git. Until a package is published, install from a checkout you trust. For local macOS/Linux use, link the skill once for all projects:
+Requires Node.js 22 or newer and Git. On macOS/Linux, install once for your user:
 
 ```sh
 git clone https://github.com/PresentJay/code-doctor.git
 cd code-doctor
 npm ci --ignore-scripts --no-fund
-CODE_DOCTOR_HOME="$PWD"
-mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.agents/skills/"
-ln -s "$CODE_DOCTOR_HOME/skills/code-doctor" "$HOME/.claude/skills/"
+node bin/code-doctor.mjs install --host both
 ```
 
-Use only the link for your host if needed. These commands refuse an existing same-named entry; inspect it instead of replacing it. Keep the checkout and its dependencies in place. Link the whole skill folder: its two-line launcher reuses the CLI from that checkout, so no global executable, project setup or model API key is needed. On Windows, use a directory link or your host's skill manager and retain access to the runtime.
+Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook and a discoverable skill to each selected host's user settings, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
 
-Open your work project and ask for Code Doctor in the normal conversation. The skill verifies the actual Git root, passes it explicitly to the CLI, and protects review data with a local Git exclude entry. It does not add host settings or skills to each project. Restart the host if the skill does not appear; wrappers may expose a different skill-discovery flow. User-level skill locations follow the [Codex](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) and [Claude Code](https://code.claude.com/docs/en/skills#choose-where-skills-load) documentation. A link is not proof that a running agent loaded the skill.
+Open a new session. **Codex requires one initial hook review/trust through `/hooks`.** Installation cannot grant that trust. Claude may require a restart to load changed settings. After activation, ordinary development prompts in Git repositories receive guidance automatically; you do not have to name Code Doctor or configure each repository. Non-Git contexts stay quiet. No background model process or browser is started.
 
-To verify the CLI against a particular project:
+The hook uses the host's actual working directory to find the Git root. The agent confirms the task's target before editing, reads relevant request/roadmap context, and prepares the reading guide when work finishes. Review storage is locally excluded from Git; installation adds no project files. See [Codex hooks](https://learn.chatgpt.com/docs/hooks) and [Claude hooks](https://code.claude.com/docs/en/hooks).
+
+Conductor and other wrappers work automatically only when they load the selected engine's user hooks. A host that ignores those settings needs its own supported integration; this installer cannot manufacture one. Windows automatic installation is not yet supported.
+
+### Turn guidance off or on
+
+Say “turn Code Doctor off for this repository,” “turn it off for this conversation,” or “turn it off everywhere.” The agent saves the matching preference. “Skip it for this task” only changes the current conversation's task behavior. Ask to turn it on again at the same scope. Direct controls are available even when guidance is off:
 
 ```sh
 PROJECT="/absolute/path/to/your-project"
-node "$CODE_DOCTOR_HOME/skills/code-doctor/scripts/code-doctor.mjs" doctor --repo "$PROJECT"
+node bin/code-doctor.mjs disable --repo "$PROJECT"
+node bin/code-doctor.mjs enable --repo "$PROJECT"
+node bin/code-doctor.mjs disable --scope global
+node bin/code-doctor.mjs enable --scope global
+node bin/code-doctor.mjs status --repo "$PROJECT"
 ```
 
-Verify that `doctor.repo` is the project you intend to review. `doctor` checks the CLI and repository; it does not connect a model or install the skill.
+Session controls add `--scope session --session ID` using the actual session ID supplied by the hook. Broader opt-outs take precedence: enabling one repository does not override a global disable. Preferences live in `~/.config/code-doctor/settings.json`, outside project source. To remove the installation entirely, remove its hook entry and user skill from each host before removing the checkout; preserve other hooks.
 
 ### Optional project MCP connection
 
 If you prefer MCP tools for a particular project, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
 
 ```sh
-node "$CODE_DOCTOR_HOME/bin/code-doctor.mjs" setup --repo "$PROJECT" --host both
+node bin/code-doctor.mjs setup --repo "$PROJECT" --host both
 ```
 
 Setup adds Code Doctor's MCP entry and project skill, preserving unrelated settings and refusing to overwrite edited managed files. Use `--host claude` or `--host codex` for one host. It creates the files below with machine-specific absolute launch paths; unignored files will appear in the project's Git changes. Do not hide already tracked or shared settings wholesale. Reopen/restart the trusted project and follow the host's MCP approval flow. Creating configuration is not proof of an active connection.
@@ -54,7 +61,11 @@ Keep the installation directory in place. Rerun project setup after moving it. D
 
 ## Use it in your normal conversation
 
-> Use Code Doctor to organize these changes so I can read the code and send several comments together.
+Ask for your development work normally, for example:
+
+> Fix the total calculation when the cart is empty.
+
+Once the installed hook is active, the agent applies Code Doctor without a separate invocation. On first use in the conversation it briefly explains that guidance is active and can be turned off.
 
 The agent checks the request, repository instructions and relevant task/roadmap sources; captures all changes; then groups and orders them around behavior or decisions. It prepares the overall comment, code excerpts and complete inventory once. With a supported native host surface it attaches the guidance there. Otherwise it shows all blocks together in the conversation. It does not require a browser or ask you to say “next” for every block.
 
