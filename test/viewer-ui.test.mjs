@@ -50,12 +50,16 @@ test('one batch contains exact saved opinions across blocks, excluding other rev
   assert.equal(typeof copied,'string',f.el('batch-status').textContent);
   assert.match(copied,/의견 2개/);
   assert.match(f.el('batch-status').textContent,/의견 2개를 복사/);
+  assert.equal(f.el('copy-fallback').hidden,false);
+  assert.equal(f.el('followup-text').value,copied, 'the exact handoff stays available when the browser reports success');
+  await f.api.poll();
+  assert.equal(f.el('followup-text').value,copied, 'unchanged polling keeps the handoff available');
   for (const [id,block] of [['one','a'],['two','b']]) {
     assert.ok(copied.includes(`blockId: ${block}\nfeedbackId: ${id}\n의견 버전: 1\n사용자 의견:\n원문 ${id}\n둘째 줄`));
   }
   assert.match(copied,/reviewId: review-1/); assert.match(copied,/fingerprint: sha/);
   assert.doesNotMatch(copied,/feedbackId: (old|done)/);
-  assert.deepEqual(f.requests,[{url:'/api/review',method:'GET'}]);
+  assert.deepEqual(f.requests,[{url:'/api/review',method:'GET'},{url:'/api/review',method:'GET'}]);
 });
 
 test('full diff counts suppressed blank context with the same coordinates as the guide', ()=>{

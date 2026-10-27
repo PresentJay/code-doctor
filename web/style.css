@@ -65,8 +65,8 @@ ol { padding: 0; list-style: none; }
 .muted { color: var(--muted); font-size: 13px; }
 .agent { max-width: 74ch; white-space: pre-wrap; overflow-wrap: anywhere; }
 .page-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 14px; }
-.intro { margin: 20px 0 22px; }
-.intro > .agent { font-size: 16px; margin: 0 0 12px; }
+.intro { margin: 14px 0 12px; }
+.intro > .agent { font-size: 16px; margin: 0 0 8px; }
 .context-content { padding: 4px 0 7px; font-size: 13px; }
 .context-content h3 { margin: 14px 0 5px; font-size: 13px; }
 .context-content ul { margin: 5px 0; padding-left: 20px; }
@@ -123,6 +123,7 @@ ol { padding: 0; list-style: none; }
 .feedback-state.pending { color: var(--warning-ink); background: var(--warning); padding: 2px 5px; border-radius: 3px; }
 .feedback-note { font-size: 13px; color: var(--muted); }
 .feedback-version { font-size: 12px; padding: 0; min-height: 26px; }
+#batch-feedback { margin-top: 26px; border-top: 1px solid var(--border); padding-top: 15px; }
 .review-footer { margin-top: 26px; border-top: 1px solid var(--border); padding-top: 15px; }
 .revision-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 13px; }
 .revision-row select { max-width: 340px; min-width: 0; font-size: 12px; text-overflow: ellipsis; }

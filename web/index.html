@@ -34,25 +34,7 @@
               <div id="context-details"></div>
             </div>
           </details>
-          <p class="muted" data-i18n="Navigation and code expansion need no model calls. Save opinions where needed and send them together.">Navigation and code expansion need no model calls. Save opinions where needed and send them together.</p>
         </div>
-
-        <section id="batch-feedback" aria-label="Send collected opinions" data-i18n-aria-label="Send collected opinions" hidden>
-          <div class="actions">
-            <button id="copy-all-feedback" class="primary" type="button" disabled data-i18n="Copy all pending opinions">Copy all pending opinions</button>
-            <span id="batch-count" class="muted" role="status"></span>
-          </div>
-          <p id="batch-help" class="muted" data-i18n="Copy once and send to the original agent conversation when ready.">Copy once and send to the original agent conversation when ready.</p>
-          <p id="batch-status" class="action-status" role="status" aria-live="polite"></p>
-          <details class="feedback-section">
-            <summary data-i18n="View collected opinions">View collected opinions</summary>
-            <ol id="batch-list"></ol>
-          </details>
-          <div id="copy-fallback" hidden>
-            <label for="followup-text" class="muted" data-i18n="Select and copy the instruction below.">Select and copy the instruction below.</label>
-            <textarea id="followup-text" readonly rows="7"></textarea>
-          </div>
-        </section>
 
         <div id="freshness-notice" class="notice" hidden>
           <p id="freshness-message"></p>
@@ -91,12 +73,29 @@
               <button id="copy-followup" type="button" disabled data-i18n="Copy this opinion">Copy this opinion</button>
               <button id="native-annotation" type="button" hidden data-i18n="Attach this block to the conversation">Attach this block to the conversation</button>
             </div>
-            <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then copy them together above.">Save opinions on several blocks, then copy them together above.</p>
+            <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then copy them together below.">Save opinions on several blocks, then copy them together below.</p>
             <p id="action-status" class="action-status" role="status" aria-live="polite"></p>
             <div id="feedback-section" class="feedback-section" hidden>
               <h3 data-i18n="Opinions on this block">Opinions on this block</h3>
               <ol id="feedback-list"></ol>
             </div>
+          </div>
+        </section>
+
+        <section id="batch-feedback" aria-label="Send collected opinions" data-i18n-aria-label="Send collected opinions" hidden>
+          <div class="actions">
+            <button id="copy-all-feedback" class="primary" type="button" disabled data-i18n="Copy all pending opinions">Copy all pending opinions</button>
+            <span id="batch-count" class="muted" role="status"></span>
+          </div>
+          <p id="batch-help" class="muted" data-i18n="Copy once and send to the original agent conversation when ready.">Copy once and send to the original agent conversation when ready.</p>
+          <p id="batch-status" class="action-status" role="status" aria-live="polite"></p>
+          <details class="feedback-section">
+            <summary data-i18n="View collected opinions">View collected opinions</summary>
+            <ol id="batch-list"></ol>
+          </details>
+          <div id="copy-fallback" hidden>
+            <label for="followup-text" class="muted" data-i18n="Select and copy the instruction below.">Select and copy the instruction below.</label>
+            <textarea id="followup-text" readonly rows="7"></textarea>
           </div>
         </section>
 

@@ -192,7 +192,7 @@ function updateFreshness() {
     ? msg("This is an older version. Saving is disabled; drafts stay with this version.")
     : !isCurrent()
       ? msg("You can keep drafting. Saving requires matching code and review versions.")
-      : msg("Save opinions on several blocks, then copy them together above."));
+      : msg("Save opinions on several blocks, then copy them together below."));
   text($('connection-status'), !online
     ? msg("Could not reach the server. Saving is paused.")
     : canAnnotate
@@ -580,7 +580,9 @@ async function copyFollowup(items, all = false) {
     if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
     await navigator.clipboard.writeText(prompt);
     if (!canCopy(items, reviewId, all)) return;
-    clearCopyFallback();
+    fallbackFeedback = { items, reviewId, all };
+    $('copy-fallback').hidden = false;
+    $('followup-text').value = prompt;
     setStatus(msg("Copied {0} opinions. Paste once into the original agent conversation and send.",items.length), false, all);
   } catch {
     if (!canCopy(items, reviewId, all)) return;
