@@ -18,9 +18,9 @@ class Element {
   select() {}
 }
 const opinion = (id, blockId, extra = {}) => ({id, blockId, reviewId:'review-1', repoRoot:'/fixture', task:{text:'fixture'}, fingerprint:'sha', version:1, state:'pending', text:`원문 ${id}\n둘째 줄`, ...extra});
-function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko') {
+function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false) {
   const review = {id:'review-1',fingerprint:'sha',summary:'Original agent summary',task:{text:'Original request',kind:'fix'},units:[],blocks:[{id:'a',title:'첫 변경',comment:'Original explanation',unitIds:[]},{id:'b',title:'둘째 변경',comment:'Second explanation',unitIds:[]}]};
-  const initial = {review, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
+  const initial = {review, sessionBound, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
   const elements = new Map();
   const document = {hidden:false,documentElement:{lang:language},querySelectorAll(){return [];}, getElementById(id) { if (!elements.has(id)) elements.set(id,new Element()); return elements.get(id); }, createElement() { return new Element(); }, createTextNode(text) { return {textContent:text}; }};
   let next = structuredClone(initial);
@@ -29,19 +29,33 @@ function fixture(clipboard = async () => { throw new Error('Clipboard unavailabl
     fetch:async (url, options) => {
       requests.push({url,method:options.method,...(options.body ? {body:JSON.parse(options.body)} : {})});
       if (url==='/api/feedback' && options.method==='POST') {
-        const saved = opinion('new','a',JSON.parse(options.body)); next.feedbacks.push(saved);
+        const saved = opinion(`new-${requests.length}`,'a',JSON.parse(options.body)); next.feedbacks.push(saved);
         return {ok:true,json:async()=>structuredClone(saved)};
       }
+      if (url==='/api/submit') return {ok:true,json:async()=>({})};
       return {ok:true,json:async()=>structuredClone(next)};
     }, initial:structuredClone(initial)};
   vm.runInNewContext(`${source}\nstate=initial; latest=initial; document.getElementById('selected-block').hidden=false;
-    globalThis.testApi={copyAllFeedback,poll,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
+    globalThis.testApi={copyAllFeedback,submitFeedback,poll,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
       draft:(id,value)=>drafts.set('review-1:sha:'+id,value), saving:(value)=>{saving=value;},
       startOtherRequest:()=>{busy=true;}, isBusy:()=>busy,
       simulateSaveResponse:()=>{state.feedbacks=state.feedbacks.map(item=>({...item,feedbackFile:'/fixture/'+item.id}));},
       switchReview:()=>{state={...state,review:{...state.review,id:'review-other'}};}};`, context);
   return {api:context.testApi, el:id=>document.getElementById(id), requests, change(fn) { fn(next); }};
 }
+
+test('one submission saves drafts from both blocks and submits the exact pending set', async ()=>{
+  const f=fixture(undefined,'ko',true);
+  f.api.draft('a','검증용 첫 의견'); f.api.draft('b','검증용 둘째 의견');
+  f.api.updateControls(); assert.equal(f.el('submit-feedback').disabled,false);
+  await f.api.submitFeedback();
+  const saved=f.requests.filter(request=>request.url==='/api/feedback');
+  assert.deepEqual(saved.map(request=>[request.body.blockId,request.body.text]),[['a','검증용 첫 의견'],['b','검증용 둘째 의견']]);
+  const sent=f.requests.find(request=>request.url==='/api/submit');
+  assert.equal(sent.body.reviewId,'review-1');
+  assert.deepEqual(sent.body.items.map(item=>item.id),['one','two','new-1','new-2']);
+  assert.match(f.el('batch-status').textContent,/제출했습니다/);
+});
 
 test('one batch contains exact saved opinions across blocks, excluding other reviews and handled opinions', async () => {
   let copied;

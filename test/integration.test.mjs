@@ -35,7 +35,7 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   let errors = ''; transport.stderr?.on('data',chunk=>errors+=chunk);
   t.after(()=>client.close()); await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','record_feedback','resolve_feedback']);
+  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback']);
   const invalidContext = await client.callTool({name:'capture_review',arguments:{context:{references:[{title:'출처',source:'docs/source.md',unexpected:'거절할 값'}]}}});
   assert.equal(invalidContext.isError,true);
   const saved = data(await client.callTool({name:'read_review',arguments:{}}));
@@ -150,7 +150,7 @@ test('oversized MCP results keep saved source and the same connection usable for
   assert.deepEqual(guide.blocks.find(block=>block.id===blockId).excerpts,focused.excerpts);
   assert.equal(focused.view,'focus'); assert.deepEqual(focused.excerpts[0].rows.map(row=>row.text),[line.trimEnd(),line.trimEnd()]);
   assert.equal((await client.callTool({name:'read_block',arguments:{reviewId:plannedId,blockId,view:'full'}})).isError,true);
-  assert.equal((await client.listTools()).tools.length,8); assert.deepEqual(errors,[]);
+  assert.ok((await client.listTools()).tools.some(tool=>tool.name==='read_review')); assert.deepEqual(errors,[]);
   assert.equal((await service.read()).id,plannedId); assert.equal((await service.read()).units.find(unit=>unit.id===large.id).patch,large.patch);
 });
 
