@@ -51,7 +51,7 @@ node bin/code-doctor.mjs feedbacks --repo /path/to/project --review REVIEW_ID
 
 Record delivered feedback against its exact block and review. Do not read unsent native drafts or duplicate already recorded opinions. A saved record is `saved-not-sent`, not execution, delivery or approval. Old source, review or opinion versions are rejected.
 
-Verify the exact listed IDs, versions and original text before applying a copied batch. Do not include later or unrelated opinions. Report conflicting instructions before changing code. Apply compatible authorized changes together, run appropriate checks, then capture and plan one revised review. Omit base during recapture to keep the original comparison commit.
+Verify the exact listed IDs, versions and original text before applying a copied batch. Do not include later or unrelated opinions. Report conflicting instructions before changing code. Apply compatible authorized changes together, run appropriate checks, then capture and plan one revised review. Omit base and task context fields during recapture to preserve the original comparison and task identity. If feedback replaces an earlier requirement, explain that in the revised summary and blocks instead of rewriting the original context.
 
 Resolve each opinion separately with its expected version, revised reviewId and evidence. `addressed` requires changed source and the same task context, but a changed fingerprint alone does not prove the requested correction. Use `dismissed` only for an explicit, explained decision.
 

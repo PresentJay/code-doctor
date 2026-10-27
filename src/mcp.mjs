@@ -49,7 +49,7 @@ export async function startMcp(cwd) {
         return {repo:selected.root};
       } finally { switching = false; }
     });
-    tool('capture_review', 'Capture all supported Git changes in the configured repository. Omitted base keeps the saved comparison commit even after commits; explicit base resets it. Saves a local review; never edits source. Read the returned units before writing explanations.', {
+    tool('capture_review', 'Capture all supported Git changes in the configured repository. Omitted base keeps the saved comparison commit even after commits; explicit base resets it. After applying feedback, omit task, kind, issue and context to preserve the original task identity; explain any changed requirements in the new reading plan. Saves a local review; never edits source. Read the returned units before writing explanations.', {
       base:z.string().optional(), task:z.string().max(8000).optional(),
       kind:z.string().max(80).optional(), issue:z.string().max(2000).optional(),
       context:z.object({requirements:z.array(z.string()).max(100).optional(), acceptanceCriteria:z.array(z.string()).max(100).optional(),
