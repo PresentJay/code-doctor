@@ -6,7 +6,7 @@ Read agent-made changes in context, then steer the work with a short instruction
 
 Code Doctor helps Claude Code and Codex prepare a complete reading guide: what changed, why it relates to the request, which code matters first, and what remains outside each excerpt. The person reads in the existing conversation or diff, collects several comments, and asks for the corrections together. Moving between prepared blocks does not require another model turn.
 
-This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel, custom next/highlight controls or automatic chat delivery. [Verified capabilities and limits](docs/validation.md).
+This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel or custom next/highlight controls. When a compatible host keeps the MCP request open, the optional viewer can return completed feedback to the waiting agent without another chat message. [Verified capabilities and limits](docs/validation.md).
 
 ## Install from source
 
@@ -44,7 +44,7 @@ Session controls add `--scope session --session ID` using the actual session ID 
 
 ### Optional project MCP connection
 
-If you prefer MCP tools for a particular project, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
+The user-level installer currently adds only the hook and skill. To use the viewer's same-turn feedback handoff, the agent also needs this project MCP connection. First ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
 
 ```sh
 node bin/code-doctor.mjs setup --repo "$PROJECT" --host both
