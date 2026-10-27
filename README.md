@@ -87,6 +87,7 @@ All CLI results are JSON, with errors on stderr. These commands are for agents a
 | `feedback` / `feedbacks` | `record_feedback` / `list_feedback` | Record and retrieve exact, versioned opinions |
 | `resolve` | `resolve_feedback` | Record the evidence for handling an opinion |
 | `serve` | `open_review` | Open a requested local code review |
+| — | `wait_for_review` | Wait once for the person to finish and return their exact feedback |
 | `submitted` | `read_submitted_feedback` | Read a submitted batch for the originating host session or private handoff key |
 
 ```sh
@@ -101,7 +102,7 @@ node bin/code-doctor.mjs --help
 
 The first capture pins the comparison commit. Later captures without `--base` keep it, including after commits. `plan` accepts only existing unit IDs and rejects missing, duplicated or fabricated units. Focus ranges come from captured old/new file coordinates, not generated snippets. Each reading block identifies unshown changed ranges and non-line changes; these are presentation boundaries, not a review-completion score. Full patches and archived reviews remain available.
 
-Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The local viewer can submit several opinions as one batch without copying; ask the original agent to apply them. A stopped agent is not automatically resumed. The tool never executes reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
+Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The local viewer can submit several opinions as one batch without copying. A connected agent can wait for review completion and continue in the same turn. If its host times out or the agent is stopped, the batch remains saved for a later request. The tool never executes reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
 
 ## Contribute and release
 

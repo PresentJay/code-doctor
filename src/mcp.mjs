@@ -15,9 +15,9 @@ export async function startMcp(cwd) {
       server.registerTool(name, {
         description, inputSchema:z.object(shape),
         annotations:{readOnlyHint, destructiveHint:false, openWorldHint:false},
-      }, async input => {
+      }, async (input, context) => {
         try {
-          const value = await action(input);
+          const value = await action(input, context);
           const result = {content:[{type:'text', text:JSON.stringify(value)}]};
           // Leave room below the stdio SDK's default 10 MiB message limit for the protocol envelope.
           if (Buffer.byteLength(JSON.stringify(result)) > 8 * 1024 * 1024) {
@@ -60,13 +60,20 @@ export async function startMcp(cwd) {
       feedbackId:z.string(), expectedVersion:z.number().int().min(1), reviewId:z.string(),
       resolution:z.enum(['addressed','dismissed']), note:z.string().min(1).max(8000),
     }, service.resolve);
-    tool('open_review', 'Open the optional local review. Pass the actual host session ID from hook context to enable submitting a batch for that session. The viewer cannot wake a stopped agent. Do not publish the local access token.', {session:z.string().min(1).max(500).optional()}, async ({session}) => {
+    tool('open_review', 'Open the optional local review. Show its URL to the person, then call wait_for_review with its waitId and the current review ID. Do not publish the local access token or waitId.', {session:z.string().min(1).max(500).optional()}, async ({session}) => {
       if (viewer && viewerSession !== session) throw new Error('This viewer is already bound to a different host session.');
       viewerSession = session;
       viewer ??= startReviewServer({service,session}).then(value => { value.server.unref(); return value; }).catch(error => { viewer = undefined; throw error; });
       const opened = await viewer;
-      return {url:opened.url,repo:service.root,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:session ? 'Submitted opinions can be read by this host session on the next user message.' : 'Keep the private handoffKey in the original agent context. On a request to apply feedback, read submitted opinions using this key as --session.'};
+      const current = await service.read().catch(error => { if (error.message.startsWith('No review yet.')) return null; throw error; });
+      return {url:opened.url,repo:service.root,waitId:opened.prepareWait(),reviewId:current?.id ?? null,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:'Wait for review completion; a timeout or cancellation is not a completed review.'};
     });
+    tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Call after showing the open_review URL. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
+      waitId:z.string().regex(/^[a-f0-9]{48}$/),reviewId:z.string().regex(/^review-[a-f0-9]{24}$/),timeoutMs:z.number().int().min(100).max(900000).default(600000),
+    }, async ({waitId,reviewId,timeoutMs},context) => {
+      if (!viewer) throw new Error('Open a review before waiting.');
+      return (await viewer).waitForReview({id:waitId,reviewId,timeoutMs,signal:context.mcpReq.signal});
+    }, true);
     return server;
   });
   return {async close() { process.stdin.off('end',closeViewer); await Promise.all([stdio.close(),closeViewer()]); }};

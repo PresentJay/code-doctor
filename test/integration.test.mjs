@@ -35,7 +35,7 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   let errors = ''; transport.stderr?.on('data',chunk=>errors+=chunk);
   t.after(()=>client.close()); await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback']);
+  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback','wait_for_review']);
   const invalidContext = await client.callTool({name:'capture_review',arguments:{context:{references:[{title:'출처',source:'docs/source.md',unexpected:'거절할 값'}]}}});
   assert.equal(invalidContext.isError,true);
   const saved = data(await client.callTool({name:'read_review',arguments:{}}));

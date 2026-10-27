@@ -32,14 +32,14 @@ function fixture(clipboard = async () => { throw new Error('Clipboard unavailabl
         const saved = opinion(`new-${requests.length}`,'a',JSON.parse(options.body)); next.feedbacks.push(saved);
         return {ok:true,json:async()=>structuredClone(saved)};
       }
-      if (url==='/api/submit') return {ok:true,json:async()=>({})};
+      if (url==='/api/finish') return {ok:true,json:async()=>({waiting:true})};
       return {ok:true,json:async()=>structuredClone(next)};
     }, initial:structuredClone(initial)};
   vm.runInNewContext(`${source}\nstate=initial; latest=initial; document.getElementById('selected-block').hidden=false;
     globalThis.testApi={copyAllFeedback,submitFeedback,poll,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
       draft:(id,value)=>drafts.set('review-1:sha:'+id,value), saving:(value)=>{saving=value;},
-      startOtherRequest:()=>{busy=true;}, isBusy:()=>busy,
-      simulateSaveResponse:()=>{state.feedbacks=state.feedbacks.map(item=>({...item,feedbackFile:'/fixture/'+item.id}));},
+      startOtherRequest:()=>{busy=true;}, isBusy:()=>busy, finished:(value)=>{finished=value;},
+      simulateSaveResponse:()=>{state.feedbacks=state.feedbacks.map(item=>({...item,feedbackFile:'/fixture/'+item.id}));}, clearFeedback:()=>{state.feedbacks=[];},
       switchReview:()=>{state={...state,review:{...state.review,id:'review-other'}};}};`, context);
   return {api:context.testApi, el:id=>document.getElementById(id), requests, change(fn) { fn(next); }};
 }
@@ -51,10 +51,33 @@ test('one submission saves drafts from both blocks and submits the exact pending
   await f.api.submitFeedback();
   const saved=f.requests.filter(request=>request.url==='/api/feedback');
   assert.deepEqual(saved.map(request=>[request.body.blockId,request.body.text]),[['a','검증용 첫 의견'],['b','검증용 둘째 의견']]);
-  const sent=f.requests.find(request=>request.url==='/api/submit');
+  const sent=f.requests.find(request=>request.url==='/api/finish');
   assert.equal(sent.body.reviewId,'review-1');
   assert.deepEqual(sent.body.items.map(item=>item.id),['one','two','new-1','new-2']);
-  assert.match(f.el('batch-status').textContent,/제출했습니다/);
+  assert.match(f.el('batch-status').textContent,/검토를 마쳤습니다/);
+  assert.equal(f.el('submit-feedback').disabled,true);
+});
+
+test('review can finish without comments and does not create an instruction', async ()=>{
+  const f=fixture(undefined,'ko',true); f.api.clearFeedback(); f.api.updateControls();
+  assert.equal(f.el('submit-feedback').disabled,false);
+  await f.api.submitFeedback();
+  assert.deepEqual(f.requests.map(request=>request.url),['/api/finish']);
+  assert.equal(f.requests[0].body.items.length,0);
+});
+
+test('a completed review waits for the agent before opening a new version and preserves drafts', async ()=>{
+  for (const hasDraft of [false,true]) {
+    const f=fixture(undefined,'ko',true); f.api.finished(true);
+    if (hasDraft) f.api.draft('b','do not discard this draft');
+    f.change(state=>{state.review.id='review-new';state.latestReviewId='review-new';});
+    await f.api.poll();
+    assert.equal(JSON.parse(f.api.identity()).review.id,'review-1','do not open an intermediate capture');
+    f.change(state=>{state.agentWaiting=true;});
+    await f.api.poll();
+    assert.equal(JSON.parse(f.api.identity()).review.id,hasDraft ? 'review-1' : 'review-new');
+    if (!hasDraft) assert.match(f.el('action-status').textContent,/수정된 검토를 열었습니다/);
+  }
 });
 
 test('one batch contains exact saved opinions across blocks, excluding other reviews and handled opinions', async () => {

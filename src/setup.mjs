@@ -110,7 +110,7 @@ export async function setup({repo, host = 'both'}) {
   for (const relative of targets) {
     const file = path.join(repo, relative);
     const text = read(relative);
-    if (relative === '.mcp.json') outputs.set(file, claudeConfig(text, servers, manifest.claude, file));
+    if (relative === '.mcp.json') outputs.set(file, claudeConfig(text, {'code-doctor':{...servers['code-doctor'],timeout:900000}}, manifest.claude, file));
     else if (relative === '.codex/config.toml') outputs.set(file, codexConfig(text, servers, manifest.codex, file));
     else outputs.set(file, skillFile(text, canonical, manifest.skills, relative, file));
   }
