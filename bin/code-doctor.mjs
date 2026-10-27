@@ -17,7 +17,8 @@ const help = `Code Doctor 0.1.0-rc.2 (Node >=22, Git required)
   feedbacks --repo PATH [--review ID --state pending|all|addressed|dismissed]
   resolve  --repo PATH --feedback ID --version N --review ID --resolution addressed|dismissed --note TEXT
   mcp      --repo PATH                   (stdio; no model API key)
-  serve    --repo PATH [--port 0]         (optional web review, only on request; keep running)
+  serve    --repo PATH [--port 0 --session ID] (optional web review; keep running)
+  submitted --repo PATH --session ID     (read explicitly submitted feedback for this session)
   install  [--host both|codex|claude]   (one-time user hooks + skill; automatic guidance)
   status   --repo PATH [--session ID]
   disable  --repo PATH [--scope repo|session|global --session ID]
@@ -53,8 +54,8 @@ try {
       const {startMcp} = await import('../src/mcp.mjs'); await startMcp(cwd);
     } else if (command === 'serve') {
       const {startReviewServer} = await import('../src/viewer.mjs');
-      const viewer = await startReviewServer({cwd,port:Number(values.port)});
-      result = {url:viewer.url,repo:viewer.repo,close:'Stop this CLI process to close the local viewer.'};
+      const viewer = await startReviewServer({cwd,port:Number(values.port),session:values.session});
+      result = {url:viewer.url,repo:viewer.repo,...(viewer.handoffKey ? {handoffKey:viewer.handoffKey} : {}),close:'Stop this CLI process to close the local viewer.'};
     } else if (command === 'setup') {
       const {setup} = await import('../src/setup.mjs');
       result = await setup({repo:cwd,host:values.host});
@@ -71,6 +72,7 @@ try {
       else if (command === 'read') result = await service.read({reviewId:values.review,view:values.view});
       else if (command === 'block') result = await service.block({reviewId:values.review,blockId:values.block,view:values.view});
       else if (command === 'feedbacks') result = await service.feedbacks({reviewId:values.review,state:values.state});
+      else if (command === 'submitted') result = await service.submitted({session:values.session});
       else if (command === 'resolve') result = await service.resolve({feedbackId:values.feedback,expectedVersion:Number(values.version),reviewId:values.review,resolution:values.resolution,note:values.note});
       else if (command === 'plan') {
         if (!values.file) throw new Error('plan requires --file');

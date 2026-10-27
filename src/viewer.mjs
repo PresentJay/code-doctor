@@ -5,6 +5,8 @@ import { createService } from './service.mjs';
 
 const assets = new Map([
   ['/', ['../web/index.html', 'text/html; charset=utf-8']],
+  ['/ui.js', ['../web/ui.js', 'text/javascript; charset=utf-8']],
+  ['/shadcn.css', ['../web/shadcn.css', 'text/css; charset=utf-8']],
   ['/style.css', ['../web/style.css', 'text/css; charset=utf-8']],
   ['/app.mjs', ['../web/app.mjs', 'text/javascript; charset=utf-8']],
   ['/i18n.mjs', ['../web/i18n.mjs', 'text/javascript; charset=utf-8']],
@@ -44,8 +46,11 @@ async function body(request) {
   return value;
 }
 
-export async function startReviewServer({cwd, service, port = 0} = {}) {
+export async function startReviewServer({cwd, service, port = 0, session} = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be an integer from 0 to 65535.');
+  if (session !== undefined && (typeof session !== 'string' || !session.trim() || session.length > 500 || session.includes('\0'))) throw new Error('Invalid host session ID.');
+  const handoffKey = session === undefined ? `viewer-${randomBytes(24).toString('hex')}` : undefined;
+  session ??= handoffKey;
   service ??= await createService(cwd ?? process.cwd());
   const token = randomBytes(24).toString('hex');
   let origin;
@@ -81,10 +86,10 @@ export async function startReviewServer({cwd, service, port = 0} = {}) {
         let result;
         try { result = await service.state({reviewId:url.searchParams.get('reviewId') ?? undefined}); }
         catch (error) { if (!url.search && error.message.startsWith('No review yet.')) result = empty(); else throw error; }
-        json(200, result);
+        json(200, {...result, sessionBound:typeof session === 'string' && !!session.trim()});
         return;
       }
-      if (!['/api/feedback','/api/recapture'].includes(url.pathname)) throw fail(404, 'not-found', 'Not found.');
+      if (!['/api/feedback','/api/submit','/api/recapture'].includes(url.pathname)) throw fail(404, 'not-found', 'Not found.');
       if (request.method !== 'POST') throw fail(405, 'invalid', 'Use POST.');
       if (url.search) throw fail(400, 'invalid', 'Unexpected query parameters.');
       const input = await body(request);
@@ -92,6 +97,9 @@ export async function startReviewServer({cwd, service, port = 0} = {}) {
         const fields = ['reviewId','blockId','text'];
         if (Object.keys(input).length !== fields.length || fields.some(key => typeof input[key] !== 'string') || Object.keys(input).some(key => !fields.includes(key))) throw fail(400, 'invalid', 'Expected reviewId, blockId and text strings.');
         json(200, await service.feedback(input));
+      } else if (url.pathname === '/api/submit') {
+        if (Object.keys(input).sort().join(',') !== 'items,reviewId' || typeof input.reviewId !== 'string' || !Array.isArray(input.items)) throw fail(400, 'invalid', 'Expected reviewId and feedback items.');
+        json(200, await service.submit({session, ...input}));
       } else {
         if (Object.keys(input).length) throw fail(400, 'invalid', 'Recapture accepts an empty object and preserves the current task context.');
         await service.capture();
@@ -112,6 +120,6 @@ export async function startReviewServer({cwd, service, port = 0} = {}) {
     server.listen(port, '127.0.0.1', resolve);
   });
   origin = `http://127.0.0.1:${server.address().port}`;
-  return {url:`${origin}/#token=${token}`, repo:service.root, server,
+  return {url:`${origin}/#token=${token}`, repo:service.root, ...(handoffKey ? {handoffKey} : {}), server,
     close:() => new Promise((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); })};
 }

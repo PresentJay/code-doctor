@@ -132,6 +132,11 @@ function updateControls() {
   $('save-feedback').disabled = !selected || !current || busy || saving || !$('opinion').value.trim() || !!matchingFeedback();
   $('copy-followup').disabled = !selected || matchingFeedback()?.state !== 'pending' || busy;
   $('copy-all-feedback').disabled = !isCurrent() || busy || saving || !collectedFeedback().length || !!unsavedBlocks().length;
+  $('submit-feedback').disabled = !state?.sessionBound || !current || busy || saving || (!collectedFeedback().length && !unsavedBlocks().length);
+  $('submit-feedback').hidden = !state?.sessionBound;
+  $('copy-all-feedback').hidden = !!state?.sessionBound;
+  $('copy-followup').hidden = !!state?.sessionBound;
+  $('native-annotation').hidden = !canAnnotate || !!state?.sessionBound;
   $('native-annotation').disabled = !selected || !current || matchingFeedback()?.state !== 'pending' || busy;
   $('recapture').disabled = busy || saving;
   $('refresh-review').disabled = busy || saving;
@@ -148,10 +153,10 @@ function renderCollectedFeedback() {
   $('batch-feedback').hidden = !state?.review;
   text($('batch-count'), msg("Pending opinions: {0}{1}",items.length,unsaved.length ? msg(" · unsaved: {0}",unsaved.length) : ''));
   text($('batch-help'), unsaved.length
-    ? msg("Unsaved opinions: {0}. Save or clear them in their blocks before copying.",unsaved.map(item => item.title).join(', '))
+    ? state?.sessionBound ? msg("Submitting saves your drafts and sends them together.") : msg("Unsaved opinions: {0}. Save or clear them in their blocks before copying.",unsaved.map(item => item.title).join(', '))
     : !isCurrent()
       ? msg("Batch copy requires current code and the latest review. Older opinions remain available in their blocks.")
-      : msg("Copy once and send to the original agent conversation. Copying does not send or execute anything."));
+      : state?.sessionBound ? msg("Submit once, then ask the original agent to apply your opinions.") : msg("This review is not linked to an agent session. Ask the agent to reopen it with its session ID."));
   const list = $('batch-list');
   const signature = JSON.stringify([state?.review?.id, items.map(({id, version, blockId, text}) => [id, version, blockId, text])]);
   if (signature !== collectedSignature) {
@@ -192,9 +197,11 @@ function updateFreshness() {
     ? msg("This is an older version. Saving is disabled; drafts stay with this version.")
     : !isCurrent()
       ? msg("You can keep drafting. Saving requires matching code and review versions.")
-      : msg("Save opinions on several blocks, then copy them together above."));
+      : state?.sessionBound ? msg("Write opinions on any blocks, then submit them together below.") : msg("Save opinions on several blocks, then copy them together below."));
   text($('connection-status'), !online
     ? msg("Could not reach the server. Saving is paused.")
+    : state?.sessionBound
+      ? msg("The original agent can read submitted opinions when you ask it to apply them.")
     : canAnnotate
       ? msg("This host can attach the selected code to the conversation. Saving is not execution or approval.")
       : msg("Collect opinions and send them together to the original conversation. Saving is not execution or approval."));
@@ -311,7 +318,7 @@ function renderUnit(unit) {
     const sign = row.type === 'addition' ? '+' : row.type === 'deletion' ? '−' : row.type === 'context' ? ' ' : '';
     code.append(diffRow(type, row.oldLine, row.newLine, sign, row.text));
   }
-  if (hasHunk) article.append(code);
+  if (hasHunk) article.append(code,el('p',msg("Scroll horizontally to see the rest of the code."),'code-scroll-hint'));
   else article.append(el('p', patch ? msg("File metadata changed without code-line changes.") : msg("This change unit has no patch content."), 'source-message'));
   if (metadata.length) {
     const details = el('details', undefined, 'source-details');
@@ -338,7 +345,7 @@ function renderFeedback() {
     meta.append(document.createTextNode(msg(" · {0} · opinion version {1}",shortId(item.id),item.version ?? 1)));
     li.append(meta, el('p', item.text));
     if (item.note) li.append(el('p', item.note, 'feedback-note'));
-    if (item.state === 'pending') {
+    if (item.state === 'pending' && !state.sessionBound) {
       const button = el('button', msg("Copy this opinion"), 'text-button feedback-copy');
       button.type = 'button';
       button.setAttribute('aria-label', msg("Copy instruction for opinion {0}",shortId(item.id)));
@@ -367,7 +374,7 @@ function renderExcerpts(units, selected) {
     code.setAttribute('role','table');
     code.setAttribute('aria-label',msg("{0}: code highlighted by the agent",excerpt.file));
     for (const row of excerpt.rows) code.append(diffRow(row.type === 'context' ? 'context-line' : row.type,row.oldLine,row.newLine,row.type === 'addition' ? '+' : row.type === 'deletion' ? '−' : ' ',row.text));
-    article.append(header,code);
+    article.append(header,code,el('p',msg("Scroll horizontally to see the rest of the code."),'code-scroll-hint'));
     return article;
   });
   const lineCount = excerpts.reduce((sum,excerpt)=>sum + excerpt.rows.length,0);
@@ -615,6 +622,31 @@ async function copyAllFeedback() {
   await copyFollowup(collectedFeedback(), true);
 }
 
+async function submitFeedback() {
+  if (!state?.sessionBound || !isCurrent() || busy || saving) return;
+  const reviewId = state.review.id;
+  const draftsToSave = unsavedBlocks().map(item => ({blockId:item.id,text:drafts.get(`${reviewId}:${state.review.fingerprint ?? ''}:${item.id}`)}));
+  const items = collectedFeedback().map(({id,version}) => ({id,version:version ?? 1}));
+  if (!items.length && !draftsToSave.length) return;
+  busy = true;
+  requestEpoch++;
+  updateControls();
+  try {
+    for (const draft of draftsToSave) {
+      const result = await api('/api/feedback', {reviewId,...draft});
+      const saved = result.feedback ?? result;
+      if (!saved.id || saved.reviewId !== reviewId || saved.blockId !== draft.blockId || saved.text !== draft.text) throw new Error(msg("Could not confirm the save response. Reconnect and check whether the opinion was saved."));
+      state.feedbacks = [...(state.feedbacks ?? []).filter(item => item.id !== saved.id),saved];
+      items.push({id:saved.id,version:saved.version ?? 1});
+    }
+    if (latest?.review?.id === reviewId) latest.feedbacks = state.feedbacks;
+    renderFeedback();
+    await api('/api/submit', {reviewId,items});
+    setStatus(msg("Opinions submitted. In the original conversation, ask the agent to apply them."), false, true);
+  } catch (error) { setStatus(error.message, true, true); }
+  finally { busy = false; updateFreshness(); }
+}
+
 function requestAnnotation() {
   const saved = matchingFeedback();
   if (!canAnnotate || saved?.state !== 'pending' || !isCurrent()) return;
@@ -676,6 +708,7 @@ $('opinion').addEventListener('input', () => { preserveDraft(); setStatus(); cle
 $('save-feedback').addEventListener('click', saveFeedback);
 $('copy-followup').addEventListener('click', () => copyFollowup([matchingFeedback()]));
 $('copy-all-feedback').addEventListener('click', copyAllFeedback);
+$('submit-feedback').addEventListener('click', submitFeedback);
 $('native-annotation').hidden = !canAnnotate;
 $('native-annotation').addEventListener('click', requestAnnotation);
 $('recapture').addEventListener('click', recapture);

@@ -14,7 +14,7 @@ import { startReviewServer } from '../src/viewer.mjs';
 const entry = new URL('../bin/code-doctor.mjs', import.meta.url).pathname;
 const git = (cwd,...args) => execFileSync('git',['-C',cwd,...args],{stdio:'pipe'});
 const data = result => { assert.ok(!result.isError, result.content[0]?.text); return JSON.parse(result.content[0].text); };
-async function fixture(t) {
+async function fixture(t, session) {
   const root = await mkdtemp(path.join(tmpdir(),'code-doctor-viewer-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   git(root,'init','-q'); git(root,'config','user.email','test@example.invalid'); git(root,'config','user.name','Test');
@@ -22,7 +22,7 @@ async function fixture(t) {
   await writeFile(path.join(root,'a.js'),'export const answer = 1;\n');
   git(root,'add','.'); git(root,'commit','-qm','fixture');
   const service = await createService(root);
-  const viewer = await startReviewServer({service});
+  const viewer = await startReviewServer({service,session});
   t.after(()=>viewer.close());
   const url = new URL(viewer.url);
   const headers = {'X-Code-Doctor-Token':new URLSearchParams(url.hash.slice(1)).get('token')};
@@ -30,6 +30,52 @@ async function fixture(t) {
   const post = (route, value, options={}) => get(route,{method:'POST',body:JSON.stringify(value),...options,headers:{'Content-Type':'application/json',...options.headers}});
   return {root,service,viewer,url,headers,get,post};
 }
+
+test('submitted feedback is bound to the host session, exact saved versions and current source', async t=>{
+  const {root,service,post,get} = await fixture(t,'session-one');
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture',kind:'fix'});
+  const first = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'PRIVATE_FIXTURE_OPINION_ALPHA'});
+  const second = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'PRIVATE_FIXTURE_OPINION_BETA'});
+  const submitted = await post('/api/submit',{reviewId:review.id,items:[{id:first.id,version:first.version}]});
+  assert.equal(submitted.status,200);
+  assert.equal((await (await get()).json()).sessionBound,true);
+  const batch = await service.submitted({session:'session-one'});
+  assert.equal(batch.status,'ready'); assert.deepEqual(batch.items.map(item=>item.text),['PRIVATE_FIXTURE_OPINION_ALPHA']);
+  assert.equal(await service.submitted({session:'session-two'}),null);
+  const client = new Client({name:'submitted-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  assert.deepEqual(data(await client.callTool({name:'read_submitted_feedback',arguments:{session:'session-one'}})).items.map(item=>item.id),[first.id]);
+  assert.equal(data(await client.callTool({name:'read_submitted_feedback',arguments:{session:'session-two'}})),null);
+  const hook = session => JSON.parse(execFileSync(process.execPath,[entry,'hook'],{encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd:root,session_id:session,prompt:'Apply the review feedback'}),env:{...process.env,HOME:root}})).hookSpecificOutput.additionalContext;
+  assert.match(hook('session-one'),/feedback batch was explicitly submitted/);
+  assert.doesNotMatch(hook('session-two'),/feedback batch was explicitly submitted/);
+  assert.doesNotMatch(hook('session-one'),/PRIVATE_FIXTURE_OPINION_ALPHA|PRIVATE_FIXTURE_OPINION_BETA/, 'opinion contents must not be injected as hook instructions');
+  const bad = await post('/api/submit',{reviewId:review.id,items:[{id:second.id,version:2}]});
+  assert.notEqual(bad.status,200); assert.deepEqual((await service.submitted({session:'session-one'})).items.map(item=>item.id),[first.id]);
+  const feedbackFile = path.join(root,'.code-doctor',`feedback-${first.id}.json`);
+  const stored = await readFile(feedbackFile,'utf8');
+  await writeFile(feedbackFile,JSON.stringify({...JSON.parse(stored),fingerprint:'0'.repeat(64)}));
+  assert.equal((await service.submitted({session:'session-one'})).status,'changed');
+  assert.notEqual((await post('/api/submit',{reviewId:review.id,items:[{id:first.id,version:1}]})).status,200);
+  await writeFile(feedbackFile,stored);
+  await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
+  assert.equal((await service.submitted({session:'session-one'})).status,'changed');
+  assert.notEqual((await post('/api/submit',{reviewId:review.id,items:[{id:second.id,version:1}]})).status,200);
+});
+
+test('a viewer without host session returns a private per-viewer handoff key', async t=>{
+  const {root,service,viewer,post,get} = await fixture(t);
+  assert.match(viewer.handoffKey,/^viewer-[a-f0-9]{48}$/);
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture'});
+  const feedback = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'fixture opinion'});
+  assert.equal((await (await get()).json()).sessionBound,true);
+  assert.equal((await post('/api/submit',{reviewId:review.id,items:[{id:feedback.id,version:1}]})).status,200);
+  assert.equal((await service.submitted({session:viewer.handoffKey})).items[0].text,'fixture opinion');
+  assert.equal(await service.submitted({session:'unrelated-viewer'}),null);
+});
 
 test('loopback viewer withholds private code from unauthenticated/cross-origin and arbitrary path requests', async t=>{
   const {root,service,url,headers,get,post} = await fixture(t);
@@ -46,7 +92,8 @@ test('loopback viewer withholds private code from unauthenticated/cross-origin a
   assert.equal(wrongHost,403);
   for (const route of ['/a.js','/.git/config','/../a.js','/api/unknown']) assert.equal((await get(route)).status,404,route);
   const page = await get('/');
-  assert.equal(page.status,200); assert.match(await page.text(),/\/app.mjs/);
+  assert.equal(page.status,200); assert.match(await page.text(),/\/ui.js/);
+  assert.equal((await get('/ui.js')).status,200); assert.equal((await get('/shadcn.css')).status,200);
   assert.match(page.headers.get('content-security-policy'),/frame-ancestors 'none'/);
   assert.equal(page.headers.get('cache-control'),'no-store');
   assert.equal((await get('/app.mjs')).status,200);

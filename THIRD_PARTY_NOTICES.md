@@ -1,6 +1,6 @@
 # Third-party notices
 
-Code Doctor is distributed under Apache-2.0. Its dependencies keep their own licenses and copyright notices. No dependency source is vendored into the package; the package manager installs dependencies with their accompanying notices.
+Code Doctor is distributed under Apache-2.0. Its dependencies keep their own licenses and copyright notices. The local viewer bundles shadcn/ui component source and selected React dependencies. Their full notices are included in [web/BUNDLED-LICENSES.txt](web/BUNDLED-LICENSES.txt); other dependencies are installed with their accompanying notices.
 
 | Direct dependency | Version | License | Source |
 |---|---|---|---|
@@ -11,4 +11,4 @@ Code Doctor is distributed under Apache-2.0. Its dependencies keep their own lic
 
 The exact dependency graph is recorded in package-lock.json. Redistributors who bundle dependencies must preserve the applicable license and notice files from those installed packages, including transitive dependencies. This file does not replace their license texts or relicense their code.
 
-Public implementation references in docs/references.md describe ideas and interfaces, not bundled third-party source.
+The button and textarea components are adapted from the shadcn/ui New York v4 registry (MIT); their original license is included with the bundled notices. Public implementation references in docs/references.md describe ideas and interfaces.

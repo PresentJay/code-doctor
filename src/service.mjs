@@ -1,13 +1,17 @@
 import { readFile, writeFile, mkdir, lstat, rename, realpath, readdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { captureReview, validateReview, applyPlan, recordFeedback } from './review.mjs';
 import { blockContent, patchLineCount } from './reading.mjs';
 
 const reviewPattern = /^review-[0-9a-f]{24}$/;
 const feedbackPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sameTask = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const batchPath = session => {
+  if (typeof session !== 'string' || !session.trim() || session.length > 500 || session.includes('\0')) throw new Error('A valid host session ID is required.');
+  return `batch-${createHash('sha256').update(session).digest('hex')}.json`;
+};
 const taskOptions = review => ({base:review.base, baseCommit:review.baseCommit, task:review.task.text, kind:review.task.kind, issue:review.task.issue, ...(review.task.context ? {context:review.task.context} : {})});
 
 export async function createService(cwd) {
@@ -168,6 +172,30 @@ export async function createService(cwd) {
   }
   const service = {
     root, read, history, feedbacks, diagnostics,
+    async submitted({session}) {
+      const batch = await json(batchPath(session));
+      if (!batch) return null;
+      if (batch.repoRoot !== root || !reviewPattern.test(batch.reviewId) || !Array.isArray(batch.items) || !batch.items.length || batch.items.some(item => !feedbackPattern.test(item.id) || !Number.isSafeInteger(item.version))) throw new Error('Invalid submitted feedback batch.');
+      const review = await read({reviewId:batch.reviewId});
+      const latest = await read();
+      const items = await Promise.all(batch.items.map(item => feedbackById(item.id)));
+      const current = latest.id === review.id && batch.fingerprint === review.fingerprint && (await freshness(review)).state === 'current';
+      const pending = items.every((item,index) => item.reviewId === review.id && item.fingerprint === review.fingerprint && sameTask(item.task,review.task) && item.state === 'pending' && item.version === batch.items[index].version);
+      return {...batch, status:current && pending ? 'ready' : 'changed', items};
+    },
+    async submit({session, reviewId, items}) {
+      const target = batchPath(session);
+      if (!Array.isArray(items) || !items.length || items.length > 100 || items.some(item => !item || Object.keys(item).sort().join(',') !== 'id,version' || !feedbackPattern.test(item.id) || !Number.isSafeInteger(item.version)) || new Set(items.map(item => item.id)).size !== items.length) throw new Error('Submit unique feedback IDs and versions.');
+      return mutate(async () => {
+        const review = await selected(reviewId);
+        if ((await freshness(review)).state !== 'current') throw new Error('Code changed. Capture a new review before submitting feedback.');
+        const saved = await Promise.all(items.map(item => feedbackById(item.id)));
+        if (!saved.every((item,index) => item.reviewId === review.id && item.fingerprint === review.fingerprint && sameTask(item.task,review.task) && item.state === 'pending' && item.version === items[index].version)) throw new Error('Feedback changed. Refresh before submitting.');
+        const batch = {repoRoot:root,reviewId:review.id,fingerprint:review.fingerprint,items,submittedAt:new Date().toISOString()};
+        await (await prepare(target,batch))();
+        return batch;
+      });
+    },
     async capture(options = {}) {
       return mutate(async () => {
         const previous = await latestOptional();

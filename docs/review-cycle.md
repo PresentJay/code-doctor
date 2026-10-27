@@ -57,10 +57,14 @@ Resolve each opinion separately with its expected version, revised reviewId and 
 
 ## Optional viewer and storage
 
-Only when requested, run `serve --repo /path/to/project` or MCP `open_review`. Keep the process alive; it listens on loopback and exposes no arbitrary file, source execution or merge endpoint. The fragment token grants local review API access and must not be published.
+For a requested visual review, run `serve --repo /path/to/project --session HOST_SESSION_ID` or MCP `open_review` with the actual host session ID from the hook. Without a host ID, retain the private `handoffKey` returned to the opening agent; it identifies the viewer’s feedback and can be passed as `--session`. Keep the process alive; it listens on loopback and exposes no arbitrary file, source execution or merge endpoint. The fragment token grants local review API access and must not be published.
 
-Navigation, code expansion and language selection do not call a model. Save opinions, then use **Copy all pending opinions** once. Unsaved input must be saved or cleared before batch copy. Clipboard failure offers selectable text. Copying does not send a message; paste into the original conversation or explicitly ask that agent to read the saved opinions.
+Navigation, code expansion and language selection do not call a model. Write opinions in the relevant blocks and submit once; submission saves drafts and records a precise batch. In the original conversation, ask the agent to apply the submitted opinions. This does not wake an idle agent or require copying.
 
 The viewer keeps unsaved input while navigating and changing language in that page. This preview does not promise recovery after refresh or closing the tab. Server-side saved opinions remain versioned and retrievable. Browser input requests, where supported, do not prove successful chat delivery.
 
 Private storage is `.code-doctor/review.json`, `reviews/`, `history.json` and versioned feedback records. All must be ignored and untracked. Writes use a per-checkout lock. If a writer died, inspect `doctor` and verify no process owns the checkout before manually removing only its stale lock. Do not delete all reviews or remove a live writer's lock.
+
+## Submitted feedback
+
+The person can write on several blocks and submit once. Submission saves those drafts and records their exact feedback IDs, versions, review and source fingerprint under the originating host session or private handoff key. On the next request to apply feedback, use `submitted --repo PATH --session HOST_SESSION_ID` and process only a `ready` batch. Changed code, review, or feedback makes it `changed`; inspect it before acting. Submission does not wake an idle agent or authorize merge or deployment. A host without a session ID uses the returned private handoff key. It cannot use the prompt hook for automatic discovery; the original agent must retain and read its key when asked.
