@@ -35,7 +35,7 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   let errors = ''; transport.stderr?.on('data',chunk=>errors+=chunk);
   t.after(()=>client.close()); await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback','wait_for_review']);
+  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback','select_repository','wait_for_review']);
   const invalidContext = await client.callTool({name:'capture_review',arguments:{context:{references:[{title:'출처',source:'docs/source.md',unexpected:'거절할 값'}]}}});
   assert.equal(invalidContext.isError,true);
   const saved = data(await client.callTool({name:'read_review',arguments:{}}));
@@ -65,6 +65,26 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   const recaptured = data(await client.callTool({name:'capture_review',arguments:{task:'다음 변경'}}));
   assert.notEqual(recaptured.id,review.id);
   assert.equal(errors,'');
+});
+
+test('global MCP starts outside Git and selects only the actual task repository', {timeout:30000}, async t=>{
+  const first = await fixture(t), second = await fixture(t);
+  const outside = await mkdtemp(path.join(tmpdir(),'code-doctor-outside-'));
+  t.after(()=>rm(outside,{recursive:true,force:true}));
+  const client = new Client({name:'global-repository-test',version:'1.0.0'});
+  const transport = new StdioClientTransport({command:process.execPath,args:[entry,'mcp'],cwd:outside,stderr:'pipe'});
+  t.after(()=>client.close()); await client.connect(transport);
+  const missing = await client.callTool({name:'read_review',arguments:{}});
+  assert.equal(missing.isError,true); assert.match(missing.content[0].text,/select_repository/);
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:'relative'}})).isError,true);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:first}})).repo,first);
+  const captured = data(await client.callTool({name:'capture_review',arguments:{task:'first'}}));
+  assert.equal(captured.repoRoot,first);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:second}})).repo,second);
+  const next = data(await client.callTool({name:'capture_review',arguments:{task:'second'}}));
+  assert.equal(next.repoRoot,second); assert.notEqual(next.id,captured.id);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:first}})).repo,first);
+  assert.equal(data(await client.callTool({name:'read_review',arguments:{}})).id,captured.id);
 });
 
 test('outline CLI/MCP reads preserve every unit and original identity without patches or storage writes', {timeout:30000}, async t=>{
