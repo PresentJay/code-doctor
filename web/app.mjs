@@ -28,6 +28,7 @@ let busy = false;
 let online = true;
 let polling = false;
 let saving = false;
+let finished = false;
 let requestEpoch = 0;
 let fallbackFeedback = null;
 let collectedSignature = '';
@@ -132,7 +133,7 @@ function updateControls() {
   $('save-feedback').disabled = !selected || !current || busy || saving || !$('opinion').value.trim() || !!matchingFeedback();
   $('copy-followup').disabled = !selected || matchingFeedback()?.state !== 'pending' || busy;
   $('copy-all-feedback').disabled = !isCurrent() || busy || saving || !collectedFeedback().length || !!unsavedBlocks().length;
-  $('submit-feedback').disabled = !state?.sessionBound || !current || busy || saving || (!collectedFeedback().length && !unsavedBlocks().length);
+  $('submit-feedback').disabled = !state?.sessionBound || !current || busy || saving || finished;
   $('submit-feedback').hidden = !state?.sessionBound;
   $('copy-all-feedback').hidden = !!state?.sessionBound;
   $('copy-followup').hidden = !!state?.sessionBound;
@@ -153,10 +154,10 @@ function renderCollectedFeedback() {
   $('batch-feedback').hidden = !state?.review;
   text($('batch-count'), msg("Pending opinions: {0}{1}",items.length,unsaved.length ? msg(" · unsaved: {0}",unsaved.length) : ''));
   text($('batch-help'), unsaved.length
-    ? state?.sessionBound ? msg("Submitting saves your drafts and sends them together.") : msg("Unsaved opinions: {0}. Save or clear them in their blocks before copying.",unsaved.map(item => item.title).join(', '))
+    ? state?.sessionBound ? msg("Finishing saves all your drafts together.") : msg("Unsaved opinions: {0}. Save or clear them in their blocks before copying.",unsaved.map(item => item.title).join(', '))
     : !isCurrent()
       ? msg("Batch copy requires current code and the latest review. Older opinions remain available in their blocks.")
-      : state?.sessionBound ? msg("Submit once, then ask the original agent to apply your opinions.") : msg("This review is not linked to an agent session. Ask the agent to reopen it with its session ID."));
+      : state?.sessionBound ? (state.agentWaiting ? msg("Finish once to send your review to the waiting agent.") : msg("The agent is not waiting yet. Finishing will save your review.")) : msg("This review is not linked to an agent session. Ask the agent to reopen it with its session ID."));
   const list = $('batch-list');
   const signature = JSON.stringify([state?.review?.id, items.map(({id, version, blockId, text}) => [id, version, blockId, text])]);
   if (signature !== collectedSignature) {
@@ -197,11 +198,11 @@ function updateFreshness() {
     ? msg("This is an older version. Saving is disabled; drafts stay with this version.")
     : !isCurrent()
       ? msg("You can keep drafting. Saving requires matching code and review versions.")
-      : state?.sessionBound ? msg("Write opinions on any blocks, then submit them together below.") : msg("Save opinions on several blocks, then copy them together below."));
+      : state?.sessionBound ? msg("Write opinions on any blocks, then finish the review below.") : msg("Save opinions on several blocks, then copy them together below."));
   text($('connection-status'), !online
     ? msg("Could not reach the server. Saving is paused.")
     : state?.sessionBound
-      ? msg("The original agent can read submitted opinions when you ask it to apply them.")
+      ? msg("Finishing a review does not approve a merge or deployment.")
     : canAnnotate
       ? msg("This host can attach the selected code to the conversation. Saving is not execution or approval.")
       : msg("Collect opinions and send them together to the original conversation. Saving is not execution or approval."));
@@ -438,8 +439,10 @@ function selectBlock(position, focus = false) {
 
 function applyState(next, { keepBlock = false } = {}) {
   const previousBlock = block()?.id;
+  const previousReview = state?.review?.id;
   preserveDraft();
   state = next;
+  if (previousReview !== state.review?.id) finished = false;
   $('loading').hidden = true;
   $('error').hidden = true;
   $('review-content').hidden = false;
@@ -627,7 +630,6 @@ async function submitFeedback() {
   const reviewId = state.review.id;
   const draftsToSave = unsavedBlocks().map(item => ({blockId:item.id,text:drafts.get(`${reviewId}:${state.review.fingerprint ?? ''}:${item.id}`)}));
   const items = collectedFeedback().map(({id,version}) => ({id,version:version ?? 1}));
-  if (!items.length && !draftsToSave.length) return;
   busy = true;
   requestEpoch++;
   updateControls();
@@ -641,8 +643,9 @@ async function submitFeedback() {
     }
     if (latest?.review?.id === reviewId) latest.feedbacks = state.feedbacks;
     renderFeedback();
-    await api('/api/submit', {reviewId,items});
-    setStatus(msg("Opinions submitted. In the original conversation, ask the agent to apply them."), false, true);
+    const result = await api('/api/finish', {reviewId,items});
+    finished = true;
+    setStatus(result.waiting ? msg("Review complete. Check the original agent's response.") : msg("Review saved, but no agent was waiting. Ask the original agent to continue."), false, true);
   } catch (error) { setStatus(error.message, true, true); }
   finally { busy = false; updateFreshness(); }
 }
@@ -672,6 +675,12 @@ async function poll() {
     const oldLatestId = latestId();
     latest = next;
     state.feedbacks = next.feedbacks;
+    state.agentWaiting = next.agentWaiting;
+    if (finished && next.agentWaiting && state.review && next.review && state.review.id !== next.review.id && !unsavedBlocks().length) {
+      applyState(next, {keepBlock:true});
+      setStatus(msg("The updated review is ready."));
+      return;
+    }
     if (state.review?.id === next.review?.id) {
       state.freshness = next.freshness;
       state.history = next.history;

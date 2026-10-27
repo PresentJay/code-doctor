@@ -17,6 +17,8 @@ const git = (root, ...args) => execFileSync('git', ['-C', root, ...args], { stdi
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const toml = text => structuredClone(parse(text, { integersAsBigInt: true }));
 const server = root => ({ command: process.execPath, args: [entry, 'mcp', '--repo', root] });
+const claudeServer = root => ({...server(root),timeout:900000});
+const codexServer = root => ({...server(root),tool_timeout_sec:900n});
 
 async function put(root, relative, text) {
   await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
@@ -82,14 +84,14 @@ test('setup preserves unrelated Claude values and exact Codex text, then reruns 
   assert.ok(result.files.length >= 4);
   assert.ok(result.files.every(file => path.isAbsolute(file) && file.startsWith(root + path.sep)));
   const claude = await json(root, '.mcp.json');
-  assert.deepEqual(claude, { ...existingClaude, mcpServers: { ...existingClaude.mcpServers, 'code-doctor': server(root) } });
+  assert.deepEqual(claude, { ...existingClaude, mcpServers: { ...existingClaude.mcpServers, 'code-doctor': claudeServer(root) } });
   const codexText = await read(root, '.codex/config.toml');
   assert.ok(codexText.startsWith(existingCodex), 'setup rewrote original TOML instead of appending its block');
   const { mcp_servers, ...settings } = toml(codexText);
   const { mcp_servers: originalServers, ...originalSettings } = toml(existingCodex);
   assert.deepEqual(settings, originalSettings);
   assert.equal(settings.large_integer, 9007199254740993n);
-  assert.deepEqual(mcp_servers, { ...originalServers, 'code-doctor': server(root) });
+  assert.deepEqual(mcp_servers, { ...originalServers, 'code-doctor': codexServer(root) });
   for (const relative of skillPaths) assert.equal(await read(root, relative), canonicalSkill);
   for (const relative of ['.mcp.json', '.codex/config.toml']) assert.equal((await lstat(path.join(root, relative))).mode & 0o777, 0o600);
   const manifest = await json(root, manifestPath);
@@ -175,7 +177,7 @@ test('manifest-owned previous skills and Claude launch values upgrade while unre
   await setup({ repo: root });
   for (const relative of skillPaths) assert.equal(await read(root, relative), canonicalSkill);
   assert.equal((await lstat(path.join(root, skillPaths[0]))).mode & 0o777, 0o600);
-  assert.deepEqual((await json(root, '.mcp.json')).mcpServers['code-doctor'], { ...server(root), env: { PRESERVE: 'yes' } });
+  assert.deepEqual((await json(root, '.mcp.json')).mcpServers['code-doctor'], { ...claudeServer(root), env: { PRESERVE: 'yes' } });
   const updated = await json(root, manifestPath);
   for (const relative of skillPaths) assert.equal(updated.skills[relative], sha256(canonicalSkill));
 });
@@ -208,7 +210,29 @@ test('an unchanged previously owned Codex block upgrades without rewriting origi
   await put(root, manifestPath, JSON.stringify(manifest));
   await setup({ repo: root });
   assert.equal(await read(root, '.codex/config.toml'), installed);
-  assert.deepEqual(toml(installed).mcp_servers['code-doctor'], server(root));
+  assert.deepEqual(toml(installed).mcp_servers['code-doctor'], codexServer(root));
+});
+
+test('managed legacy timeouts upgrade while user-set and unmanaged values are preserved', async t=>{
+  const root = await fixture(t);
+  await setup({repo:root});
+  const manifest = await json(root,manifestPath);
+  const codex = await read(root,'.codex/config.toml');
+  const oldCodex = codex.replace('tool_timeout_sec = 900\n','');
+  const start = oldCodex.lastIndexOf('# code-doctor setup begin: code-doctor\n');
+  await put(root,'.codex/config.toml',oldCodex);
+  manifest.codex['code-doctor'] = sha256(oldCodex.slice(start));
+  const claude = await json(root,'.mcp.json');
+  delete claude.mcpServers['code-doctor'].timeout;
+  await put(root,'.mcp.json',JSON.stringify(claude));
+  await put(root,manifestPath,JSON.stringify(manifest));
+  await setup({repo:root});
+  assert.equal(toml(await read(root,'.codex/config.toml')).mcp_servers['code-doctor'].tool_timeout_sec,900n);
+  assert.equal((await json(root,'.mcp.json')).mcpServers['code-doctor'].timeout,900000);
+  const updated = await json(root,'.mcp.json'); updated.mcpServers['code-doctor'].timeout = 120000;
+  await put(root,'.mcp.json',JSON.stringify(updated));
+  await setup({repo:root});
+  assert.equal((await json(root,'.mcp.json')).mcpServers['code-doctor'].timeout,120000);
 });
 
 test('user edits inside an owned Codex block reject before a pending skill upgrade is written', async t => {

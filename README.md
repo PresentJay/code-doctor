@@ -6,7 +6,7 @@ Read agent-made changes in context, then steer the work with a short instruction
 
 Code Doctor helps Claude Code and Codex prepare a complete reading guide: what changed, why it relates to the request, which code matters first, and what remains outside each excerpt. The person reads in the existing conversation or diff, collects several comments, and asks for the corrections together. Moving between prepared blocks does not require another model turn.
 
-This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel, custom next/highlight controls or automatic chat delivery. [Verified capabilities and limits](docs/validation.md).
+This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel or custom next/highlight controls. When a compatible host keeps the MCP request open, the optional viewer can return completed feedback to the waiting agent without another chat message. [Verified capabilities and limits](docs/validation.md).
 
 ## Install from source
 
@@ -44,7 +44,7 @@ Session controls add `--scope session --session ID` using the actual session ID 
 
 ### Optional project MCP connection
 
-If you prefer MCP tools for a particular project, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
+The user-level installer currently adds only the hook and skill. To use the viewer's same-turn feedback handoff, the agent also needs this project MCP connection. First ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
 
 ```sh
 node bin/code-doctor.mjs setup --repo "$PROJECT" --host both
@@ -87,6 +87,7 @@ All CLI results are JSON, with errors on stderr. These commands are for agents a
 | `feedback` / `feedbacks` | `record_feedback` / `list_feedback` | Record and retrieve exact, versioned opinions |
 | `resolve` | `resolve_feedback` | Record the evidence for handling an opinion |
 | `serve` | `open_review` | Open a requested local code review |
+| — | `wait_for_review` | Wait once for the person to finish and return their exact feedback |
 | `submitted` | `read_submitted_feedback` | Read a submitted batch for the originating host session or private handoff key |
 
 ```sh
@@ -101,7 +102,7 @@ node bin/code-doctor.mjs --help
 
 The first capture pins the comparison commit. Later captures without `--base` keep it, including after commits. `plan` accepts only existing unit IDs and rejects missing, duplicated or fabricated units. Focus ranges come from captured old/new file coordinates, not generated snippets. Each reading block identifies unshown changed ranges and non-line changes; these are presentation boundaries, not a review-completion score. Full patches and archived reviews remain available.
 
-Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The local viewer can submit several opinions as one batch without copying; ask the original agent to apply them. A stopped agent is not automatically resumed. The tool never executes reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
+Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The local viewer can submit several opinions as one batch without copying. A connected agent can wait for review completion and continue in the same turn. If its host times out or the agent is stopped, the batch remains saved for a later request. The tool never executes reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
 
 ## Contribute and release
 
