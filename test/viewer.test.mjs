@@ -96,11 +96,15 @@ test('a real MCP request waits for one completion and preserves review identity'
   const pending = wait(firstOpen,{timeout:10000});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await get()).agentWaiting,true);
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:root}})).isError,true,'a waiting review cannot change repository');
   assert.equal((await wait(firstOpen,{timeout:10000})).isError,true,'do not attach two waiting agents to one review');
   const response = await finish(review.id,[{id:first.id,version:1},{id:second.id,version:1}]);
   assert.equal(response.status,200); assert.equal((await response.json()).waiting,true);
   const completed = data(await pending);
   assert.equal(completed.status,'completed'); assert.deepEqual(completed.items.map(item=>item.text),['first opinion','second opinion']);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:root}})).repo,service.root);
+  const other = (await fixture(t)).root;
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:other}})).isError,true,'an open viewer cannot be retargeted');
   assert.notEqual((await finish(review.id,[])).status,200,'duplicate completion cannot replace a delivered batch');
   const secondOpen = await open();
   assert.notEqual(secondOpen.waitId,firstOpen.waitId);
