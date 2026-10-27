@@ -87,9 +87,15 @@ test('a real MCP request waits for one completion and preserves review identity'
   const client = new Client({name:'review-wait-test',version:'1.0.0'});
   t.after(()=>client.close());
   await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
-  const open = async()=>data(await client.callTool({name:'open_review',arguments:{}}));
-  const firstOpen = await open();
+  const open = async(args={})=>data(await client.callTool({name:'open_review',arguments:args}));
+  const firstOpen = await open({lang:'ko'});
   const url = new URL(firstOpen.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('lang'),'ko');
+  for (const lang of ['en','ja','zh-CN']) {
+    const params = new URLSearchParams(new URL((await open({lang})).url).hash.slice(1));
+    assert.equal(params.get('lang'),lang); assert.equal(params.get('token'),token);
+  }
+  assert.equal((await client.callTool({name:'open_review',arguments:{lang:'unsupported'}})).isError,true);
   const get = ()=>fetch(url.origin+'/api/review',{headers:{'X-Code-Doctor-Token':token}}).then(r=>r.json());
   const finish = (reviewId,items)=>fetch(url.origin+'/api/finish',{method:'POST',headers:{'X-Code-Doctor-Token':token,'Content-Type':'application/json'},body:JSON.stringify({reviewId,items})});
   const wait = (opened,options={})=>client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:opened.reviewId,timeoutMs:5000}},options);
@@ -107,6 +113,7 @@ test('a real MCP request waits for one completion and preserves review identity'
   assert.equal((await client.callTool({name:'select_repository',arguments:{repo:other}})).isError,true,'an open viewer cannot be retargeted');
   assert.notEqual((await finish(review.id,[])).status,200,'duplicate completion cannot replace a delivered batch');
   const secondOpen = await open();
+  assert.equal(new URLSearchParams(new URL(secondOpen.url).hash.slice(1)).get('lang'),null);
   assert.notEqual(secondOpen.waitId,firstOpen.waitId);
   const early = await finish(review.id,[]);
   assert.equal(early.status,200); assert.equal((await early.json()).waiting,false);
