@@ -71,7 +71,10 @@ export function claudeConfig(text, servers, managed, file) {
       if (!object(current)) throw conflict(`${file} (mcpServers.${name})`);
       if (!sameCommand(current, server)) {
         if (managed[name] !== commandHash(current)) throw conflict(`${file} (mcpServers.${name})`);
-        next.mcpServers[name] = {...current, ...server};
+        next.mcpServers[name] = {...server, ...current, command:server.command, args:server.args};
+        changed = true;
+      } else if (managed[name] === commandHash(current) && current.timeout === undefined && server.timeout !== undefined) {
+        next.mcpServers[name] = {...current, timeout:server.timeout};
         changed = true;
       }
     } else {
@@ -131,7 +134,7 @@ function managedBlocks(text, file) {
 }
 
 function block(name, server) {
-  return `# code-doctor setup begin: ${name}\n[mcp_servers.${name}]\ncommand = ${JSON.stringify(server.command)}\nargs = ${JSON.stringify(server.args)}\n# code-doctor setup end: ${name}\n`;
+  return `# code-doctor setup begin: ${name}\n[mcp_servers.${name}]\ncommand = ${JSON.stringify(server.command)}\nargs = ${JSON.stringify(server.args)}\ntool_timeout_sec = 900\n# code-doctor setup end: ${name}\n`;
 }
 
 export function codexConfig(text = '', servers, managed, file) {
@@ -153,13 +156,13 @@ export function codexConfig(text = '', servers, managed, file) {
       }
       replacements.push({...owned, text:generated});
       managed[name] = hash(generated);
-      expected.mcp_servers[name] = Object.assign(Object.create(null), current, server);
+      expected.mcp_servers[name] = Object.assign(Object.create(null), current, server, {tool_timeout_sec:900n});
     } else if (Object.hasOwn(original.mcp_servers ?? {}, name)) {
       if (managed[name] !== undefined || !object(current) || !sameCommand(current, server)) throw conflict(`${file} (mcp_servers.${name}; missing managed block)`);
     } else {
       additions.push(generated);
       managed[name] = hash(generated);
-      expected.mcp_servers[name] = Object.assign(Object.create(null), server);
+      expected.mcp_servers[name] = Object.assign(Object.create(null), server, {tool_timeout_sec:900n});
     }
   }
   let candidate = text;

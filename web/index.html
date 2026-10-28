@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <title data-i18n="Code Doctor · Code review">Code Doctor · Code review</title>
+    <link rel="stylesheet" href="/shadcn.css">
     <link rel="stylesheet" href="/style.css">
-    <script type="module" src="/app.mjs"></script>
+    <script type="module" src="/ui.js"></script>
   </head>
   <body>
     <main>
@@ -45,7 +46,8 @@
           <button id="open-latest" type="button" data-i18n="Open newer review">Open newer review</button>
         </div>
 
-        <details id="inventory" class="inventory">
+        <div class="review-workspace">
+        <details id="inventory" class="inventory" open>
           <summary id="inventory-label" data-i18n="All changes">All changes</summary>
           <ol id="block-list"></ol>
         </details>
@@ -54,26 +56,26 @@
 
         <section id="selected-block" class="block" aria-labelledby="block-title" hidden oai-annotatable="Code change block" data-i18n-oai-annotatable="Code change block">
           <div class="block-toolbar">
-            <p class="muted block-meta" id="block-meta"></p>
             <nav class="block-nav" aria-label="Navigate code blocks" data-i18n-aria-label="Navigate code blocks">
-              <button id="previous" type="button" aria-label="Previous code block" data-i18n-aria-label="Previous code block" data-i18n="Previous">Previous</button>
+              <button id="previous" type="button" data-shadcn="outline" aria-label="Previous code block" data-i18n-aria-label="Previous code block" data-i18n="Previous">Previous</button>
               <span id="block-step" class="muted"></span>
-              <button id="next" type="button" aria-label="Next code block" data-i18n-aria-label="Next code block" data-i18n="Next">Next</button>
+              <button id="next" type="button" data-shadcn="outline" aria-label="Next code block" data-i18n-aria-label="Next code block" data-i18n="Next">Next</button>
             </nav>
           </div>
           <h2 id="block-title" tabindex="-1"></h2>
+          <p class="muted block-meta" id="block-meta"></p>
           <p class="agent block-comment" id="block-comment"></p>
           <div id="diffs"></div>
 
           <div class="opinion">
             <label for="opinion" data-i18n="Instruction for this block">Instruction for this block</label>
-            <textarea id="opinion" rows="3" maxlength="4000" placeholder="Example: return an error here and keep the existing response format." data-i18n-placeholder="Example: return an error here and keep the existing response format." aria-describedby="opinion-help"></textarea>
+            <textarea data-shadcn="textarea" id="opinion" rows="3" maxlength="4000" placeholder="Example: return an error here and keep the existing response format." data-i18n-placeholder="Example: return an error here and keep the existing response format." aria-describedby="opinion-help"></textarea>
             <div class="actions">
-              <button id="save-feedback" type="button" data-i18n="Save opinion">Save opinion</button>
+              <button id="save-feedback" type="button" data-shadcn="outline" data-i18n="Save opinion">Save opinion</button>
               <button id="copy-followup" type="button" disabled data-i18n="Copy this opinion">Copy this opinion</button>
               <button id="native-annotation" type="button" hidden data-i18n="Attach this block to the conversation">Attach this block to the conversation</button>
             </div>
-            <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then copy them together below.">Save opinions on several blocks, then copy them together below.</p>
+            <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then submit them together below.">Save opinions on several blocks, then submit them together below.</p>
             <p id="action-status" class="action-status" role="status" aria-live="polite"></p>
             <div id="feedback-section" class="feedback-section" hidden>
               <h3 data-i18n="Opinions on this block">Opinions on this block</h3>
@@ -81,9 +83,11 @@
             </div>
           </div>
         </section>
+        </div>
 
         <section id="batch-feedback" aria-label="Send collected opinions" data-i18n-aria-label="Send collected opinions" hidden>
           <div class="actions">
+            <button id="submit-feedback" class="primary" type="button" disabled data-shadcn="default" data-i18n="Finish review">Finish review</button>
             <button id="copy-all-feedback" class="primary" type="button" disabled data-i18n="Copy all pending opinions">Copy all pending opinions</button>
             <span id="batch-count" class="muted" role="status"></span>
           </div>

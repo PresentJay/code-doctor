@@ -1,0 +1,17 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "./components";
+@theme inline {
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--paper);
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--ink);
+  --color-accent: var(--surface);
+  --color-accent-foreground: var(--ink);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-muted-foreground: var(--muted);
+  --color-destructive: var(--error);
+}

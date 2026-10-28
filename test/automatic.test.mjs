@@ -35,12 +35,25 @@ test('one installation preserves settings and its actual commands guide ordinary
  assert.equal(execFileSync('git',['-C',f.repo,'status','--porcelain'],{encoding:'utf8'}),'');
  assert.match(f.hook(f.dir),/discover the development repository/);assert.equal(f.hook(f.repo,'abc',{hook_event_name:'Stop'}),'');
 });
+test('Codex user installation adds an idempotent MCP entry without overwriting other config',async t=>{
+ const f=await fixture(t); await mkdir(path.join(f.home,'.codex'));
+ const file=path.join(f.home,'.codex/config.toml');
+ await writeFile(file,'model = "example"\n\n[mcp_servers.other]\ncommand = "other"\n');
+ f.cli('install','--host','codex'); const installed=await readFile(file,'utf8');
+ assert.match(installed,/model = "example"/); assert.match(installed,/\[mcp_servers\.other\]/);
+ assert.match(installed,/\[mcp_servers\.code-doctor\]/); assert.match(installed,/tool_timeout_sec = 900/);
+ f.cli('install','--host','codex'); assert.equal(await readFile(file,'utf8'),installed);
+ await writeFile(file,installed.replace('tool_timeout_sec = 900','tool_timeout_sec = 100'));
+ const hooks=await readFile(path.join(f.home,'.codex/hooks.json'),'utf8');
+ assert.throws(()=>f.cli('install','--host','codex'),/differs or was edited/);
+ assert.equal(await readFile(path.join(f.home,'.codex/hooks.json'),'utf8'),hooks);
+});
 test('repository, session and global controls persist and installation never resets opt-outs',async t=>{
  const f=await fixture(t);f.cli('install');assert.ok(f.hook());
- f.cli('disable','--repo',f.repo);assert.equal(f.hook(),'');assert.ok(f.hook(f.other));
- f.cli('install');assert.equal(f.hook(),'');
+ f.cli('disable','--repo',f.repo);assert.match(f.hook(),/Code Doctor — controls only/);assert.ok(f.hook(f.other));
+ f.cli('install');assert.match(f.hook(),/Code Doctor — controls only/);
  f.cli('enable','--repo',f.repo);assert.ok(f.hook());
- f.cli('disable','--repo',f.repo,'--scope','session','--session','session-a');assert.equal(f.hook(),'');assert.ok(f.hook(f.repo,'session-b'));assert.ok(f.hook(f.other));
+ f.cli('disable','--repo',f.repo,'--scope','session','--session','session-a');assert.match(f.hook(),/Code Doctor — controls only/);assert.ok(f.hook(f.repo,'session-b'));assert.ok(f.hook(f.other));
  assert.equal(f.cli('status','--repo',f.repo,'--session','session-a').disabledBy,'session');
  f.cli('enable','--repo',f.repo,'--scope','session','--session','session-a');assert.ok(f.hook());
  f.cli('disable','--scope','global');assert.equal(f.hook(),'');assert.equal(f.hook(f.other),'');
@@ -83,7 +96,7 @@ test('custom Claude config directory receives both the hook and discoverable ski
 test('Git roots with trailing spaces are preserved exactly',async t=>{
  const f=await fixture(t),repo=path.join(f.dir,'project with trailing space ');await mkdir(repo);execFileSync('git',['init','-q',repo]);
  f.cli('install');assert.equal(f.cli('status','--repo',repo).repo,repo);assert.ok(f.hook(repo));
- f.cli('disable','--repo',repo);assert.equal(f.hook(repo),'');
+ f.cli('disable','--repo',repo);assert.match(f.hook(repo),/Code Doctor — controls only/);
 });
 
 
@@ -101,4 +114,32 @@ test('a non-Git start defers to the actual repository and session controls witho
  const file=path.join(f.dir,'file');await writeFile(file,'not a directory');assert.equal(f.hook(file),'');
  assert.equal(f.hook(f.dir,'abc',{hook_event_name:'Stop'}),'');
  await writeFile(path.join(f.home,'.config/code-doctor/settings.json'),'broken');assert.equal(f.hook(f.dir),'');
+});
+
+
+test('disabled targets retain actual session controls and do not suppress a different enabled task',async t=>{
+ const f=await fixture(t);f.cli('install');
+ const session="conversation-'-$-id";
+ f.cli('disable','--repo',f.repo,'--scope','session','--session',session);
+ for(const file of ['.codex/hooks.json','.claude/settings.json']){
+  const config=JSON.parse(await readFile(path.join(f.home,file),'utf8'));
+  const command=config.hooks.UserPromptSubmit[0].hooks[0].command;
+  const output=execFileSync('/bin/sh',['-c',command],{env:f.env,encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd:f.repo,session_id:session,prompt:'Fix the other project'})});
+  const context=JSON.parse(output).hookSpecificOutput.additionalContext;
+  assert.match(context,/Code Doctor — controls only/);
+  assert.ok(context.includes(JSON.stringify(session)));assert.ok(context.includes(JSON.stringify(f.repo)));
+  assert.match(context,/'enable'.*'--scope' 'session'/);
+  assert.match(context,/status.*--repo ABSOLUTE_TASK_REPO/);
+  assert.equal(f.cli('status','--repo',f.repo,'--session',session).disabledBy,'session');
+  assert.equal(f.cli('status','--repo',f.other,'--session',session).enabled,true);
+ }
+ const controls=JSON.parse(f.hook(f.repo,session)).hookSpecificOutput.additionalContext;
+ const enable=controls.split('\n').find(line=>line.startsWith('Only when'))?.match(/run (.+?)\. Use the scope/)?.[1];
+ assert.ok(enable); execFileSync('/bin/sh',['-c',enable],{env:f.env,stdio:'pipe'});
+ assert.match(f.hook(f.repo,session),/automatic development guidance/);
+ f.cli('disable','--repo',f.repo);
+ assert.match(f.hook(f.repo,session),/'enable'.*'--scope' 'repo'/);
+ f.cli('enable','--repo',f.repo,'--scope','session','--session',session);
+ assert.equal(f.cli('status','--repo',f.repo,'--session',session).disabledBy,'repo');
+ f.cli('disable','--scope','global');assert.equal(f.hook(f.repo,session),'');assert.equal(f.hook(f.dir,session),'');
 });

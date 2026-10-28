@@ -1,13 +1,28 @@
 import { readFile, writeFile, mkdir, lstat, rename, realpath, readdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { captureReview, validateReview, applyPlan, recordFeedback } from './review.mjs';
-import { blockContent, patchLineCount } from './reading.mjs';
+import { blockContent, patchLineCount, patchRows } from './reading.mjs';
 
 const reviewPattern = /^review-[0-9a-f]{24}$/;
 const feedbackPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sameTask = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Staging can split hunks and change Git's blob IDs and coordinates without editing code.
+const changes = review => {
+  const metadata = new Set(), lines = [];
+  for (const unit of review.units) {
+    const rows = patchRows(unit.patch).filter(row => row.type !== 'context');
+    metadata.add(JSON.stringify([unit.file,unit.previousFile,unit.status,unit.oldMode,unit.newMode,rows.length ? null : unit.patch]));
+    for (const row of rows) lines.push({file:unit.file,side:row.type,line:row.type === 'addition' ? row.newLine : row.oldLine,text:row.text});
+  }
+  lines.sort((a,b)=>a.file.localeCompare(b.file) || a.side.localeCompare(b.side) || a.line-b.line);
+  return {metadata:[...metadata].sort(),lines:lines.map(({file,side,text})=>[file,side,text])};
+};
+const batchPath = session => {
+  if (typeof session !== 'string' || !session.trim() || session.length > 500 || session.includes('\0')) throw new Error('A valid host session ID is required.');
+  return `batch-${createHash('sha256').update(session).digest('hex')}.json`;
+};
 const taskOptions = review => ({base:review.base, baseCommit:review.baseCommit, task:review.task.text, kind:review.task.kind, issue:review.task.issue, ...(review.task.context ? {context:review.task.context} : {})});
 
 export async function createService(cwd) {
@@ -168,12 +183,41 @@ export async function createService(cwd) {
   }
   const service = {
     root, read, history, feedbacks, diagnostics,
+    async submitted({session}) {
+      const batch = await json(batchPath(session));
+      if (!batch) return null;
+      if (batch.repoRoot !== root || !reviewPattern.test(batch.reviewId) || !Array.isArray(batch.items) || batch.items.some(item => !feedbackPattern.test(item.id) || !Number.isSafeInteger(item.version))) throw new Error('Invalid submitted feedback batch.');
+      const review = await read({reviewId:batch.reviewId});
+      const latest = await read();
+      const items = await Promise.all(batch.items.map(item => feedbackById(item.id)));
+      const current = latest.id === review.id && batch.fingerprint === review.fingerprint && (await freshness(review)).state === 'current';
+      const pending = items.every((item,index) => item.reviewId === review.id && item.fingerprint === review.fingerprint && sameTask(item.task,review.task) && item.state === 'pending' && item.version === batch.items[index].version);
+      return {...batch, status:current && pending ? 'ready' : 'changed', items};
+    },
+    async submit({session, reviewId, items, allowEmpty = false}) {
+      const target = batchPath(session);
+      if (!Array.isArray(items) || (!items.length && !allowEmpty) || items.length > 100 || items.some(item => !item || Object.keys(item).sort().join(',') !== 'id,version' || !feedbackPattern.test(item.id) || !Number.isSafeInteger(item.version)) || new Set(items.map(item => item.id)).size !== items.length) throw new Error('Submit unique feedback IDs and versions.');
+      return mutate(async () => {
+        const review = await selected(reviewId);
+        if ((await freshness(review)).state !== 'current') throw new Error('Code changed. Capture a new review before submitting feedback.');
+        const saved = await Promise.all(items.map(item => feedbackById(item.id)));
+        if (!saved.every((item,index) => item.reviewId === review.id && item.fingerprint === review.fingerprint && sameTask(item.task,review.task) && item.state === 'pending' && item.version === items[index].version)) throw new Error('Feedback changed. Refresh before submitting.');
+        const batch = {id:randomUUID(),repoRoot:root,reviewId:review.id,fingerprint:review.fingerprint,items,submittedAt:new Date().toISOString()};
+        await (await prepare(target,batch))();
+        return batch;
+      });
+    },
     async capture(options = {}) {
       return mutate(async () => {
         const previous = await latestOptional();
         const inherited = previous ? taskOptions(previous) : {};
+        const newTask = previous && options.task !== undefined && options.task !== previous.task.text;
         if (options.base !== undefined) delete inherited.baseCommit;
+        if (newTask) {
+          delete inherited.kind; delete inherited.issue; delete inherited.context;
+        }
         const review = await captureReview({...inherited, ...options, cwd:root});
+        if (newTask && options.base === undefined && review.headCommit !== previous.baseCommit) throw new Error('New task has a previous comparison base different from HEAD. Supply an explicit base verified for this task; HEAD can omit changes already committed.');
         if (previous && previous.fingerprint === review.fingerprint && sameTask(previous.task, review.task)) return previous;
         return save(review);
       });
@@ -223,7 +267,12 @@ export async function createService(cwd) {
         const review = await selected(reviewId);
         if (!sameTask(item.task, review.task)) throw new Error('Feedback belongs to another task context.');
         if ((await freshness(review)).state !== 'current') throw new Error('Stale review: recapture the revised source before resolving feedback.');
-        if (resolution === 'addressed' && item.fingerprint === review.fingerprint) throw new Error('Source has not changed. Capture the actual correction before marking feedback addressed.');
+        if (resolution === 'addressed') {
+          const original = await read({reviewId:item.reviewId});
+          if (original.fingerprint !== item.fingerprint || !sameTask(original.task,item.task)) throw new Error('Feedback does not match its archived review.');
+          if (original.baseCommit !== review.baseCommit) throw new Error('Cannot verify a correction across different comparison commits. Recapture using the original comparison commit.');
+          if (sameTask(changes(original),changes(review))) throw new Error('Source has not changed. Capture the actual correction before marking feedback addressed.');
+        }
         const next = {...item, state:resolution, version:item.version + 1, resolvedReviewId:review.id, resolvedAt:new Date().toISOString(), note:note.trim()};
         await (await prepare(`feedback-${item.id}.json`, next))();
         return next;
