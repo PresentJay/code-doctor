@@ -30,7 +30,8 @@
     "check": "npm test && node scripts/check-package.mjs",
     "doctor": "node bin/code-doctor.mjs doctor",
     "mcp": "node bin/code-doctor.mjs mcp",
-    "demo": "node examples/native-probe/server.mjs"
+    "demo": "node examples/native-probe/server.mjs",
+    "build:ui": "esbuild web/ui.tsx --bundle --format=esm --minify --external:/app.mjs --outfile=web/ui.js && tailwindcss -i web/shadcn-input.css -o web/shadcn.css --minify"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
@@ -38,7 +39,16 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.3.1"
+    "@modelcontextprotocol/client": "2.3.1",
+    "@radix-ui/react-slot": "1.5.0",
+    "@tailwindcss/cli": "4.3.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "esbuild": "0.28.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3"
   },
   "repository": {
     "type": "git",

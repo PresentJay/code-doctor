@@ -35,6 +35,19 @@ test('one installation preserves settings and its actual commands guide ordinary
  assert.equal(execFileSync('git',['-C',f.repo,'status','--porcelain'],{encoding:'utf8'}),'');
  assert.match(f.hook(f.dir),/discover the development repository/);assert.equal(f.hook(f.repo,'abc',{hook_event_name:'Stop'}),'');
 });
+test('Codex user installation adds an idempotent MCP entry without overwriting other config',async t=>{
+ const f=await fixture(t); await mkdir(path.join(f.home,'.codex'));
+ const file=path.join(f.home,'.codex/config.toml');
+ await writeFile(file,'model = "example"\n\n[mcp_servers.other]\ncommand = "other"\n');
+ f.cli('install','--host','codex'); const installed=await readFile(file,'utf8');
+ assert.match(installed,/model = "example"/); assert.match(installed,/\[mcp_servers\.other\]/);
+ assert.match(installed,/\[mcp_servers\.code-doctor\]/); assert.match(installed,/tool_timeout_sec = 900/);
+ f.cli('install','--host','codex'); assert.equal(await readFile(file,'utf8'),installed);
+ await writeFile(file,installed.replace('tool_timeout_sec = 900','tool_timeout_sec = 100'));
+ const hooks=await readFile(path.join(f.home,'.codex/hooks.json'),'utf8');
+ assert.throws(()=>f.cli('install','--host','codex'),/differs or was edited/);
+ assert.equal(await readFile(path.join(f.home,'.codex/hooks.json'),'utf8'),hooks);
+});
 test('repository, session and global controls persist and installation never resets opt-outs',async t=>{
  const f=await fixture(t);f.cli('install');assert.ok(f.hook());
  f.cli('disable','--repo',f.repo);assert.match(f.hook(),/Code Doctor — controls only/);assert.ok(f.hook(f.other));
@@ -120,7 +133,9 @@ test('disabled targets retain actual session controls and do not suppress a diff
   assert.equal(f.cli('status','--repo',f.repo,'--session',session).disabledBy,'session');
   assert.equal(f.cli('status','--repo',f.other,'--session',session).enabled,true);
  }
- f.cli('enable','--repo',f.repo,'--scope','session','--session',session);
+ const controls=JSON.parse(f.hook(f.repo,session)).hookSpecificOutput.additionalContext;
+ const enable=controls.split('\n').find(line=>line.startsWith('Only when'))?.match(/run (.+?)\. Use the scope/)?.[1];
+ assert.ok(enable); execFileSync('/bin/sh',['-c',enable],{env:f.env,stdio:'pipe'});
  assert.match(f.hook(f.repo,session),/automatic development guidance/);
  f.cli('disable','--repo',f.repo);
  assert.match(f.hook(f.repo,session),/'enable'.*'--scope' 'repo'/);

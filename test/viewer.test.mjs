@@ -14,7 +14,7 @@ import { startReviewServer } from '../src/viewer.mjs';
 const entry = new URL('../bin/code-doctor.mjs', import.meta.url).pathname;
 const git = (cwd,...args) => execFileSync('git',['-C',cwd,...args],{stdio:'pipe'});
 const data = result => { assert.ok(!result.isError, result.content[0]?.text); return JSON.parse(result.content[0].text); };
-async function fixture(t) {
+async function fixture(t, session) {
   const root = await mkdtemp(path.join(tmpdir(),'code-doctor-viewer-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   git(root,'init','-q'); git(root,'config','user.email','test@example.invalid'); git(root,'config','user.name','Test');
@@ -22,7 +22,7 @@ async function fixture(t) {
   await writeFile(path.join(root,'a.js'),'export const answer = 1;\n');
   git(root,'add','.'); git(root,'commit','-qm','fixture');
   const service = await createService(root);
-  const viewer = await startReviewServer({service});
+  const viewer = await startReviewServer({service,session});
   t.after(()=>viewer.close());
   const url = new URL(viewer.url);
   const headers = {'X-Code-Doctor-Token':new URLSearchParams(url.hash.slice(1)).get('token')};
@@ -30,6 +30,139 @@ async function fixture(t) {
   const post = (route, value, options={}) => get(route,{method:'POST',body:JSON.stringify(value),...options,headers:{'Content-Type':'application/json',...options.headers}});
   return {root,service,viewer,url,headers,get,post};
 }
+
+test('submitted feedback is bound to the host session, exact saved versions and current source', async t=>{
+  const {root,service,post,get} = await fixture(t,'session-one');
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture',kind:'fix'});
+  const first = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'PRIVATE_FIXTURE_OPINION_ALPHA'});
+  const second = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'PRIVATE_FIXTURE_OPINION_BETA'});
+  const submitted = await post('/api/submit',{reviewId:review.id,items:[{id:first.id,version:first.version}]});
+  assert.equal(submitted.status,200);
+  assert.equal((await (await get()).json()).sessionBound,true);
+  const batch = await service.submitted({session:'session-one'});
+  assert.equal(batch.status,'ready'); assert.deepEqual(batch.items.map(item=>item.text),['PRIVATE_FIXTURE_OPINION_ALPHA']);
+  assert.equal(await service.submitted({session:'session-two'}),null);
+  const client = new Client({name:'submitted-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  assert.deepEqual(data(await client.callTool({name:'read_submitted_feedback',arguments:{session:'session-one'}})).items.map(item=>item.id),[first.id]);
+  assert.equal(data(await client.callTool({name:'read_submitted_feedback',arguments:{session:'session-two'}})),null);
+  const hook = session => JSON.parse(execFileSync(process.execPath,[entry,'hook'],{encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd:root,session_id:session,prompt:'Apply the review feedback'}),env:{...process.env,HOME:root}})).hookSpecificOutput.additionalContext;
+  assert.match(hook('session-one'),/feedback batch was explicitly submitted/);
+  assert.doesNotMatch(hook('session-two'),/feedback batch was explicitly submitted/);
+  assert.doesNotMatch(hook('session-one'),/PRIVATE_FIXTURE_OPINION_ALPHA|PRIVATE_FIXTURE_OPINION_BETA/, 'opinion contents must not be injected as hook instructions');
+  const bad = await post('/api/submit',{reviewId:review.id,items:[{id:second.id,version:2}]});
+  assert.notEqual(bad.status,200); assert.deepEqual((await service.submitted({session:'session-one'})).items.map(item=>item.id),[first.id]);
+  const feedbackFile = path.join(root,'.code-doctor',`feedback-${first.id}.json`);
+  const stored = await readFile(feedbackFile,'utf8');
+  await writeFile(feedbackFile,JSON.stringify({...JSON.parse(stored),fingerprint:'0'.repeat(64)}));
+  assert.equal((await service.submitted({session:'session-one'})).status,'changed');
+  assert.notEqual((await post('/api/submit',{reviewId:review.id,items:[{id:first.id,version:1}]})).status,200);
+  await writeFile(feedbackFile,stored);
+  await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
+  assert.equal((await service.submitted({session:'session-one'})).status,'changed');
+  assert.notEqual((await post('/api/submit',{reviewId:review.id,items:[{id:second.id,version:1}]})).status,200);
+});
+
+test('a viewer without host session returns a private per-viewer handoff key', async t=>{
+  const {root,service,viewer,post,get} = await fixture(t);
+  assert.match(viewer.handoffKey,/^viewer-[a-f0-9]{48}$/);
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture'});
+  const feedback = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'fixture opinion'});
+  assert.equal((await (await get()).json()).sessionBound,true);
+  assert.equal((await post('/api/submit',{reviewId:review.id,items:[{id:feedback.id,version:1}]})).status,200);
+  assert.equal((await service.submitted({session:viewer.handoffKey})).items[0].text,'fixture opinion');
+  assert.equal(await service.submitted({session:'unrelated-viewer'}),null);
+});
+
+test('a real MCP request waits for one completion and preserves review identity', {timeout:30000}, async t=>{
+  const {root,service} = await fixture(t);
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  await writeFile(path.join(root,'b.js'),'export const value = 2;\n');
+  const review = await service.capture({task:'fixture'});
+  const first = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'first opinion'});
+  const second = await service.feedback({reviewId:review.id,blockId:review.blocks[1].id,text:'second opinion'});
+  const client = new Client({name:'review-wait-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const open = async(args={})=>data(await client.callTool({name:'open_review',arguments:args}));
+  const firstOpen = await open({lang:'ko'});
+  const url = new URL(firstOpen.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('lang'),'ko');
+  for (const lang of ['en','ja','zh-CN']) {
+    const params = new URLSearchParams(new URL((await open({lang})).url).hash.slice(1));
+    assert.equal(params.get('lang'),lang); assert.equal(params.get('token'),token);
+  }
+  assert.equal((await client.callTool({name:'open_review',arguments:{lang:'unsupported'}})).isError,true);
+  const get = ()=>fetch(url.origin+'/api/review',{headers:{'X-Code-Doctor-Token':token}}).then(r=>r.json());
+  const finish = (reviewId,items)=>fetch(url.origin+'/api/finish',{method:'POST',headers:{'X-Code-Doctor-Token':token,'Content-Type':'application/json'},body:JSON.stringify({reviewId,items})});
+  const wait = (opened,options={})=>client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:opened.reviewId,timeoutMs:5000}},options);
+  const pending = wait(firstOpen,{timeout:10000});
+  for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal((await get()).agentWaiting,true);
+  assert.equal((await get()).reviewFinished,false);
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:root}})).isError,true,'a waiting review cannot change repository');
+  assert.equal((await wait(firstOpen,{timeout:10000})).isError,true,'do not attach two waiting agents to one review');
+  const response = await finish(review.id,[{id:first.id,version:1},{id:second.id,version:1}]);
+  assert.equal(response.status,200); assert.equal((await response.json()).waiting,true);
+  const completed = data(await pending);
+  assert.equal(completed.status,'completed'); assert.deepEqual(completed.items.map(item=>item.text),['first opinion','second opinion']);
+  assert.equal((await get()).reviewFinished,true);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:root}})).repo,service.root);
+  const other = (await fixture(t)).root;
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:other}})).isError,true,'an open viewer cannot be retargeted');
+  assert.notEqual((await finish(review.id,[])).status,200,'duplicate completion cannot replace a delivered batch');
+  const secondOpen = await open();
+  assert.equal(new URLSearchParams(new URL(secondOpen.url).hash.slice(1)).get('lang'),null);
+  assert.notEqual(secondOpen.waitId,firstOpen.waitId);
+  assert.equal(secondOpen.reviewId,review.id);
+  assert.equal((await get()).reviewFinished,false);
+  const additional = data(await client.callTool({name:'record_feedback',arguments:{reviewId:review.id,blockId:review.blocks[0].id,text:'another opinion on unchanged code'}}));
+  const early = await finish(review.id,[{id:additional.id,version:additional.version}]);
+  assert.equal(early.status,200); assert.equal((await early.json()).waiting,false);
+  const reopened = data(await wait(secondOpen,{timeout:10000}));
+  assert.equal(reopened.status,'completed'); assert.deepEqual(reopened.items.map(item=>[item.id,item.text]),[[additional.id,additional.text]]);
+  assert.equal((await get()).reviewFinished,true);
+  const thirdOpen = await open();
+  const staleWait = wait(thirdOpen,{timeout:10000});
+  for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
+  await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
+  const revised = await service.capture();
+  assert.equal((await finish(revised.id,[])).status,200);
+  assert.equal(data(await staleWait).status,'changed','a different review must not be delivered as the original');
+  const fourthOpen = await open();
+  const controller = new AbortController();
+  const cancelled = wait(fourthOpen,{timeout:10000,signal:controller.signal});
+  for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal((await get()).agentWaiting,true);
+  controller.abort();
+  await assert.rejects(cancelled);
+  for (let i=0; i<100 && (await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal((await get()).agentWaiting,false,'cancellation releases the waiting request');
+  const resumed = wait(fourthOpen,{timeout:10000});
+  for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal((await finish(revised.id,[])).status,200);
+  assert.equal(data(await resumed).status,'completed');
+});
+
+test('a timed-out review wait can resume without inventing completion', {timeout:15000}, async t=>{
+  const {root,service} = await fixture(t);
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture'});
+  const client = new Client({name:'review-timeout-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const opened = data(await client.callTool({name:'open_review',arguments:{}}));
+  const timedOut = data(await client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:review.id,timeoutMs:100}}, {timeout:5000}));
+  assert.equal(timedOut.status,'timeout');
+  const url = new URL(opened.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const response=await fetch(url.origin+'/api/finish',{method:'POST',headers:{'X-Code-Doctor-Token':token,'Content-Type':'application/json'},body:JSON.stringify({reviewId:review.id,items:[]})});
+  assert.equal((await response.json()).waiting,false);
+  const resumed=data(await client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:review.id,timeoutMs:100}}, {timeout:5000}));
+  assert.equal(resumed.status,'completed'); assert.deepEqual(resumed.items,[]);
+});
 
 test('loopback viewer withholds private code from unauthenticated/cross-origin and arbitrary path requests', async t=>{
   const {root,service,url,headers,get,post} = await fixture(t);
@@ -46,7 +179,8 @@ test('loopback viewer withholds private code from unauthenticated/cross-origin a
   assert.equal(wrongHost,403);
   for (const route of ['/a.js','/.git/config','/../a.js','/api/unknown']) assert.equal((await get(route)).status,404,route);
   const page = await get('/');
-  assert.equal(page.status,200); assert.match(await page.text(),/\/app.mjs/);
+  assert.equal(page.status,200); assert.match(await page.text(),/\/ui.js/);
+  assert.equal((await get('/ui.js')).status,200); assert.equal((await get('/shadcn.css')).status,200);
   assert.match(page.headers.get('content-security-policy'),/frame-ancestors 'none'/);
   assert.equal(page.headers.get('cache-control'),'no-store');
   assert.equal((await get('/app.mjs')).status,200);

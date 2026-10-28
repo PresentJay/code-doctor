@@ -25,6 +25,55 @@ function data(result) {
   assert.equal(result.isError, undefined, result.content?.[0]?.text);
   return JSON.parse(result.content[0].text);
 }
+test('a new task after commits requires an explicit comparison without losing its prior review', {timeout:30000}, async t=>{
+  const root = await fixture(t);
+  const service = await createService(root);
+  const original = await service.capture({task:'First task'});
+  git(root,'add','a.js'); git(root,'commit','-qm','first task');
+  await writeFile(path.join(root,'b.js'),'export const answer = 3;\n');
+  const cli = run(root,'capture','--task','Second task');
+  assert.notEqual(cli.status,0); assert.match(cli.stderr,/new task.*base/i);
+  const client = new Client({name:'comparison-boundary-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const rejected = await client.callTool({name:'capture_review',arguments:{task:'Second task'}});
+  assert.equal(rejected.isError,true); assert.match(rejected.content[0].text,/new task.*base/i);
+  assert.equal((await service.read()).id,original.id);
+  const correction = data(await client.callTool({name:'capture_review',arguments:{}}));
+  assert.equal(correction.baseCommit,original.baseCommit); assert.equal(correction.task.text,'First task');
+  await assert.rejects(()=>service.capture({task:'Second task'}),/new task.*base/i);
+  git(root,'add','b.js'); git(root,'commit','-qm','second task');
+  await writeFile(path.join(root,'c.js'),'export const answer = 4;\n');
+  const next = data(await client.callTool({name:'capture_review',arguments:{task:'Second task',base:'HEAD~1'}}));
+  assert.deepEqual([...new Set(next.units.map(unit=>unit.file))].sort(),['b.js','c.js']);
+  const fresh = run(root,'capture','--task','Third task','--base','HEAD');
+  assert.equal(fresh.status,0,fresh.stderr);
+  assert.deepEqual(JSON.parse(fresh.stdout).units.map(unit=>unit.file),['c.js']);
+  assert.equal((await service.read({reviewId:original.id})).id,original.id);
+});
+test('a new explicit task does not inherit unrelated task metadata across CLI and MCP', {timeout:30000}, async t=>{
+  const root = await fixture(t);
+  await mkdir(path.join(root,'.code-doctor'));
+  const contextFile = path.join(root,'.code-doctor','context.json');
+  await writeFile(contextFile,JSON.stringify({requirements:['First task requirement']}));
+  const firstResult = run(root,'capture','--task','First task','--kind','fix','--issue','issue:first','--context',contextFile);
+  assert.equal(firstResult.status,0,firstResult.stderr);
+  const first = JSON.parse(firstResult.stdout);
+  const client = new Client({name:'task-context-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  assert.deepEqual(data(await client.callTool({name:'capture_review',arguments:{}})).task,first.task);
+  assert.deepEqual(data(await client.callTool({name:'capture_review',arguments:{task:'First task'}})).task,first.task);
+  const second = data(await client.callTool({name:'capture_review',arguments:{task:'Second task',kind:'experiment'}}));
+  assert.deepEqual(second.task,{text:'Second task',kind:'experiment',issue:''});
+  assert.equal(second.baseCommit,first.baseCommit);
+  assert.deepEqual(data(await client.callTool({name:'read_review',arguments:{reviewId:first.id}})).task,first.task);
+  const thirdResult = run(root,'capture','--task','Third task');
+  assert.equal(thirdResult.status,0,thirdResult.stderr);
+  assert.deepEqual(JSON.parse(thirdResult.stdout).task,{text:'Third task',kind:'change',issue:''});
+  const fourth = data(await client.callTool({name:'capture_review',arguments:{task:'Fourth task',kind:'fix',issue:'issue:fourth',context:{requirements:['Fourth task requirement']}}}));
+  assert.deepEqual(fourth.task,{text:'Fourth task',kind:'fix',issue:'issue:fourth',context:{requirements:['Fourth task requirement'],acceptanceCriteria:[],references:[]}});
+});
 test('CLI and actual stdio MCP share source, exact coverage and stale feedback behavior', {timeout:30000}, async t=>{
   const root = await fixture(t);
   const cli = run(root,'capture','--task','값을 바꿔줘','--issue','https://github.com/example/repo/issues/1');
@@ -35,7 +84,7 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   let errors = ''; transport.stderr?.on('data',chunk=>errors+=chunk);
   t.after(()=>client.close()); await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','record_feedback','resolve_feedback']);
+  assert.deepEqual(tools.tools.map(x=>x.name).sort(),['capture_review','list_feedback','open_review','plan_review','read_block','read_review','read_submitted_feedback','record_feedback','resolve_feedback','select_repository','wait_for_review']);
   const invalidContext = await client.callTool({name:'capture_review',arguments:{context:{references:[{title:'출처',source:'docs/source.md',unexpected:'거절할 값'}]}}});
   assert.equal(invalidContext.isError,true);
   const saved = data(await client.callTool({name:'read_review',arguments:{}}));
@@ -65,6 +114,26 @@ test('CLI and actual stdio MCP share source, exact coverage and stale feedback b
   const recaptured = data(await client.callTool({name:'capture_review',arguments:{task:'다음 변경'}}));
   assert.notEqual(recaptured.id,review.id);
   assert.equal(errors,'');
+});
+
+test('global MCP starts outside Git and selects only the actual task repository', {timeout:30000}, async t=>{
+  const first = await fixture(t), second = await fixture(t);
+  const outside = await mkdtemp(path.join(tmpdir(),'code-doctor-outside-'));
+  t.after(()=>rm(outside,{recursive:true,force:true}));
+  const client = new Client({name:'global-repository-test',version:'1.0.0'});
+  const transport = new StdioClientTransport({command:process.execPath,args:[entry,'mcp'],cwd:outside,stderr:'pipe'});
+  t.after(()=>client.close()); await client.connect(transport);
+  const missing = await client.callTool({name:'read_review',arguments:{}});
+  assert.equal(missing.isError,true); assert.match(missing.content[0].text,/select_repository/);
+  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:'relative'}})).isError,true);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:first}})).repo,first);
+  const captured = data(await client.callTool({name:'capture_review',arguments:{task:'first'}}));
+  assert.equal(captured.repoRoot,first);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:second}})).repo,second);
+  const next = data(await client.callTool({name:'capture_review',arguments:{task:'second'}}));
+  assert.equal(next.repoRoot,second); assert.notEqual(next.id,captured.id);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:first}})).repo,first);
+  assert.equal(data(await client.callTool({name:'read_review',arguments:{}})).id,captured.id);
 });
 
 test('outline CLI/MCP reads preserve every unit and original identity without patches or storage writes', {timeout:30000}, async t=>{
@@ -150,7 +219,7 @@ test('oversized MCP results keep saved source and the same connection usable for
   assert.deepEqual(guide.blocks.find(block=>block.id===blockId).excerpts,focused.excerpts);
   assert.equal(focused.view,'focus'); assert.deepEqual(focused.excerpts[0].rows.map(row=>row.text),[line.trimEnd(),line.trimEnd()]);
   assert.equal((await client.callTool({name:'read_block',arguments:{reviewId:plannedId,blockId,view:'full'}})).isError,true);
-  assert.equal((await client.listTools()).tools.length,8); assert.deepEqual(errors,[]);
+  assert.ok((await client.listTools()).tools.some(tool=>tool.name==='read_review')); assert.deepEqual(errors,[]);
   assert.equal((await service.read()).id,plannedId); assert.equal((await service.read()).units.find(unit=>unit.id===large.id).patch,large.patch);
 });
 
@@ -281,6 +350,58 @@ test('review, temporary and feedback destinations must each be ignored and untra
   const tracked = run(root,'capture');
   assert.notEqual(tracked.status,0); assert.match(tracked.stderr,/must not be tracked/);
   assert.equal(JSON.parse(await readFile(path.join(root,'.code-doctor/review.json'),'utf8')).id,review.id);
+});
+
+test('Git bookkeeping alone cannot mark feedback addressed', {timeout:60000}, async t=>{
+  for (const scenario of ['empty commit', 'base alias', 'stage move', 'new file staged', 'partial staging', 'split hunk staging']) await t.test(scenario, async t=>{
+    const root = await fixture(t);
+    if (scenario === 'partial staging' || scenario === 'split hunk staging') {
+      const lines = Array.from({length:40},(_,index)=>`line ${index + 1}`);
+      await writeFile(path.join(root,'a.js'),lines.join('\n')+'\n');
+      git(root,'add','a.js'); git(root,'commit','-qm','long file');
+      lines[1]='change one'; lines[scenario === 'partial staging' ? 35 : 5]='change two';
+      await writeFile(path.join(root,'a.js'),lines.join('\n')+'\n');
+    }
+    if (scenario === 'new file staged') await writeFile(path.join(root,'b.js'),'export const value = 2;\n');
+    const service = await createService(root);
+    const original = await service.capture({task:'Fix the answer'});
+    const opinion = await service.feedback({reviewId:original.id,blockId:original.blocks[0].id,text:'Change answer to 3'});
+    if (scenario === 'empty commit' || scenario === 'base alias') git(root,'commit','--allow-empty','-qm','bookkeeping');
+    if (scenario === 'stage move') git(root,'add','a.js');
+    if (scenario === 'new file staged') git(root,'add','b.js');
+    if (scenario === 'partial staging') execFileSync('git',['-C',root,'add','-p','a.js'],{input:'y\nn\n',stdio:['pipe','pipe','pipe']});
+    if (scenario === 'split hunk staging') execFileSync('git',['-C',root,'add','-p','a.js'],{input:'s\ny\nn\n',stdio:['pipe','pipe','pipe']});
+    const revised = await service.capture(scenario === 'base alias' ? {base:'HEAD^'} : {});
+    assert.notEqual(revised.fingerprint,original.fingerprint);
+    await assert.rejects(()=>service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:revised.id,resolution:'addressed',note:'No code correction'}),/Source has not changed/);
+    if (scenario === 'empty commit') {
+      const cli = run(root,'resolve','--feedback',opinion.id,'--version','1','--review',revised.id,'--resolution','addressed','--note','No code correction');
+      assert.notEqual(cli.status,0); assert.match(cli.stderr,/Source has not changed/);
+      const client = new Client({name:'unchanged-source-test',version:'1.0.0'});
+      t.after(()=>client.close());
+      await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+      const rejected = await client.callTool({name:'resolve_feedback',arguments:{feedbackId:opinion.id,expectedVersion:1,reviewId:revised.id,resolution:'addressed',note:'No code correction'}});
+      assert.equal(rejected.isError,true); assert.match(rejected.content[0].text,/Source has not changed/);
+    }
+    assert.equal((await service.feedbacks({reviewId:original.id}))[0].state,'pending');
+    assert.equal((await service.read({reviewId:original.id})).id,original.id);
+    await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
+    const corrected = await service.capture();
+    assert.equal((await service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:corrected.id,resolution:'addressed',note:'Answer changed to 3'})).state,'addressed');
+  });
+  await t.test('different comparison commit', async t=>{
+    const root = await fixture(t), service = await createService(root);
+    const original = await service.capture({task:'Fix the answer'});
+    const opinion = await service.feedback({reviewId:original.id,blockId:original.blocks[0].id,text:'Change answer to 3'});
+    git(root,'add','a.js'); git(root,'commit','-qm','existing change');
+    const reset = await service.capture({base:'HEAD'});
+    await assert.rejects(()=>service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:reset.id,resolution:'addressed',note:'Changed comparison only'}),/different comparison commits/);
+    assert.equal((await service.feedbacks({reviewId:original.id}))[0].state,'pending');
+  });
+  const root = await fixture(t), service = await createService(root);
+  const review = await service.capture({task:'Dismiss an opinion'});
+  const opinion = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'Do not apply this'});
+  assert.equal((await service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:review.id,resolution:'dismissed',note:'Explicitly declined'})).state,'dismissed');
 });
 
 test('recapture pins the original comparison commit across commits and only explicit base resets it', {timeout:30000}, async t=>{

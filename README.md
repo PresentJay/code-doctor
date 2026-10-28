@@ -6,7 +6,7 @@ Read agent-made changes in context, then steer the work with a short instruction
 
 Code Doctor helps Claude Code and Codex prepare a complete reading guide: what changed, why it relates to the request, which code matters first, and what remains outside each excerpt. The person reads in the existing conversation or diff, collects several comments, and asks for the corrections together. Moving between prepared blocks does not require another model turn.
 
-This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel, custom next/highlight controls or automatic chat delivery. [Verified capabilities and limits](docs/validation.md).
+This is an early preview. It uses local Git and the agent you already run; it does not add a model service or require a new API key. A skill or MCP connection does not create a native panel or custom next/highlight controls. When a compatible host keeps the MCP request open, the optional viewer can return completed feedback to the waiting agent without another chat message. [Verified capabilities and limits](docs/validation.md).
 
 ## Install from source
 
@@ -19,7 +19,7 @@ npm ci --ignore-scripts --no-fund
 node bin/code-doctor.mjs install --host both
 ```
 
-Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook and a discoverable skill to each selected host's user settings, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
+Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook and a discoverable skill to each selected host's user settings, plus a user-level MCP entry for Codex, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
 
 Open a new session. **Codex requires one initial hook review/trust through `/hooks`.** Installation cannot grant that trust. Claude may require a restart to load changed settings. After activation, ordinary development prompts in Git repositories receive guidance automatically; you do not have to name Code Doctor or configure each repository. When a conversation starts outside Git, the hook supplies discovery instructions; the agent checks the actual task repository and session preferences before applying guidance. Unrelated questions stay quiet. No background model process or browser is started.
 
@@ -44,7 +44,7 @@ Session controls add `--scope session --session ID` using the actual session ID 
 
 ### Optional project MCP connection
 
-If you prefer MCP tools for a particular project, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
+The Codex user-level installer includes MCP. For Claude, or when a project-specific MCP configuration is preferred, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
 
 ```sh
 node bin/code-doctor.mjs setup --repo "$PROJECT" --host both
@@ -80,13 +80,16 @@ All CLI results are JSON, with errors on stderr. These commands are for agents a
 | CLI | MCP | Purpose |
 |---|---|---|
 | `capture` | `capture_review` | Capture Git changes and verified task context |
+| — | `select_repository` | Select the verified task repository for a user-level MCP connection |
 | `plan` | `plan_review` | Order and explain every existing change unit exactly once |
 | `read --view guide` | `read_review(view=guide)` | Get all ordered blocks and verified code in one call |
 | `read --view outline` | `read_review(view=outline)` | Resume from the complete inventory without repeating patches |
 | `block` | `read_block` | Read one block; `--view full` retrieves all of its patches |
 | `feedback` / `feedbacks` | `record_feedback` / `list_feedback` | Record and retrieve exact, versioned opinions |
 | `resolve` | `resolve_feedback` | Record the evidence for handling an opinion |
-| `serve` | `open_review` | Open an explicitly requested local web review |
+| `serve` | `open_review` | Open a requested local code review |
+| — | `wait_for_review` | Wait once for the person to finish and return their exact feedback |
+| `submitted` | `read_submitted_feedback` | Read a submitted batch for the originating host session or private handoff key |
 
 ```sh
 node bin/code-doctor.mjs capture --repo "$PROJECT" --base main \
@@ -98,9 +101,9 @@ node bin/code-doctor.mjs --help
 
 `capture` creates raw inventory, not agent explanations. Ask your current agent to prepare the reading plan before reading the guide; people do not need to write a plan JSON file themselves. See the [capture → plan → guide cycle](docs/review-cycle.md#prepare-and-read).
 
-The first capture pins the comparison commit. Later captures without `--base` keep it, including after commits. `plan` accepts only existing unit IDs and rejects missing, duplicated or fabricated units. Focus ranges come from captured old/new file coordinates, not generated snippets. Each reading block identifies unshown changed ranges and non-line changes; these are presentation boundaries, not a review-completion score. Full patches and archived reviews remain available.
+The first capture pins the comparison commit. Later captures without `--base` keep it, including after commits. For a different task when HEAD differs from that base, specify a verified base; the current HEAD can omit changes already committed for that task. An explicitly different task starts fresh task metadata instead of inheriting the previous task's issue or requirements; recapturing the same task keeps its context. `plan` accepts only existing unit IDs and rejects missing, duplicated or fabricated units. Focus ranges come from captured old/new file coordinates, not generated snippets. Each reading block identifies unshown changed ranges and non-line changes; these are presentation boundaries, not a review-completion score. Full patches and archived reviews remain available.
 
-Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The tool does not automatically send comments or execute reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
+Private data stays in the reviewed repository's ignored `.code-doctor/` directory. The optional server listens on loopback with a per-session token. Do not publish the token or review artifacts. The local viewer can submit several opinions as one batch without copying. A connected agent can wait for review completion and continue in the same turn. If its host times out or the agent is stopped, the batch remains saved for a later request. The tool never executes reviewed code. See [security](SECURITY.md) and the [review cycle](docs/review-cycle.md).
 
 ## Contribute and release
 

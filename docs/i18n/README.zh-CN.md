@@ -17,7 +17,7 @@ npm ci --ignore-scripts --no-fund
 node bin/code-doctor.mjs install --host both
 ```
 
-安装程序会保留已有设置，注册用户级 hook 和 skill。只使用一个代理时，指定 `--host codex` 或 `--host claude`。请保留源码目录和依赖。已被手动修改的安装内容不会被覆盖。
+安装程序会保留已有设置，注册用户级 hook 和 skill，并为 Codex 添加用户级 MCP 连接。只使用一个代理时，指定 `--host codex` 或 `--host claude`。请保留源码目录和依赖。已被手动修改的安装内容不会被覆盖。
 
 请开启新会话。Codex 首次需要在 `/hooks` 中确认并信任该 hook。激活后，正常提出开发需求即可在 Git 仓库中获得自动说明，无需每次点名 Code Doctor，也无需逐个仓库安装。Conductor 等工具仅在加载代理用户级 hook 时自动生效。暂不支持 Windows 自动安装。
 

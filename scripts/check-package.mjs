@@ -24,7 +24,7 @@ assert.ok(files.includes('src/reading.mjs'));
 assert.ok(files.includes('src/automatic.mjs') && files.includes('src/setup.mjs'));
 assert.ok(files.includes('skills/code-doctor/scripts/code-doctor.mjs'));
 execFileSync(process.execPath,['skills/code-doctor/scripts/code-doctor.mjs','--help']);
-for (const asset of ['index.html','style.css','app.mjs']) assert.ok(files.includes(`web/${asset}`), `Missing viewer asset: ${asset}`);
+for (const asset of ['index.html','style.css','app.mjs','ui.js','shadcn.css','BUNDLED-LICENSES.txt']) assert.ok(files.includes(`web/${asset}`), `Missing viewer asset: ${asset}`);
 assert.ok(files.every(f=>!f.startsWith('.code-doctor/') && !f.endsWith('config.toml') && !f.includes('node_modules')));
 
 assert.equal(pkg.license,'Apache-2.0');

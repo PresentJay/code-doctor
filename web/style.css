@@ -86,7 +86,7 @@ ol { padding: 0; list-style: none; }
 .inventory-name { min-width: 0; overflow-wrap: anywhere; }
 .inventory-files { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 .block { border-top: 1px solid var(--border); padding-top: 15px; }
-.block-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.block-toolbar { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
 .block-meta { margin: 0; }
 .block-nav { display: flex; gap: 9px; align-items: center; flex-shrink: 0; white-space: nowrap; }
 .block-nav span { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -96,6 +96,7 @@ ol { padding: 0; list-style: none; }
 .source-file { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
 .source-meta { color: var(--muted); flex-shrink: 0; }
 .diff-code { overflow-x: auto; scrollbar-color: var(--border) var(--surface); font: 12px/1.9 SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 0; }
+.code-scroll-hint { display: none; }
 .diff-row { display: flex; white-space: pre; min-width: max-content; padding-right: 16px; }
 .diff-number { color: var(--muted); width: 46px; flex-shrink: 0; text-align: right; padding-right: 12px; user-select: none; font-variant-numeric: tabular-nums; }
 .diff-sign { width: 22px; flex-shrink: 0; user-select: none; text-align: center; }
@@ -143,6 +144,7 @@ ol { padding: 0; list-style: none; }
   .source-header { flex-wrap: wrap; }
   .source-meta { font-size: 11px; }
   .diff-code { font-size: 11px; }
+  .code-scroll-hint { display: block; color: var(--muted); font-size: 12px; margin: 2px 12px 8px; }
   .diff-number { width: 34px; padding-right: 8px; }
   .diff-sign { width: 18px; }
   .revision-row select { max-width: 100%; }
@@ -151,3 +153,42 @@ ol { padding: 0; list-style: none; }
 
 .language-control { display: flex; align-items: center; gap: .5rem; }
 .page-header { flex-wrap: wrap; }
+
+/* A reading workspace: the change list stays beside the selected code. */
+body { background: #f7f8fa; line-height: 1.5; }
+main { max-width: 1380px; padding: 18px 28px 40px; }
+.page-header { padding-bottom: 12px; }
+.page-header h1 { letter-spacing: -.02em; }
+.intro { margin: 16px 0; }
+.intro > .agent { max-width: 85ch; line-height: 1.55; }
+.review-workspace { display: grid; grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); gap: 28px; align-items: start; }
+.inventory { min-width: 0; margin: 0; padding: 12px; background: #eef1f4; border-radius: 9px; }
+.inventory > summary { color: var(--ink); font-weight: 600; padding: 2px 4px 8px; }
+.inventory ol { border: 0; margin: 0; overflow: visible; }
+.inventory li + li { border: 0; }
+.inventory button { border-radius: 6px; padding: 9px 8px; background: transparent; }
+.inventory button[aria-current="true"] { background: var(--paper); box-shadow: 0 1px 3px #00000014; }
+.inventory-position { width: auto; min-width: 2em; }
+.block { min-width: 0; border: 0; padding: 0; }
+.block h2 { margin-top: 8px; font-size: 20px; }
+.block-comment { margin-bottom: 12px; }
+.block-toolbar { min-height: 40px; }
+.source { background: var(--paper); margin: 12px 0; }
+.source-header { padding: 8px 12px; }
+.diff-code { line-height: 1.8; }
+.opinion { margin-top: 20px; }
+#batch-feedback { margin: 24px 0 0 268px; border-top: 1px solid var(--border); padding-top: 16px; }
+.review-footer { margin-left: 268px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0d1117; }
+  .inventory { background: #161b22; }
+  .inventory button[aria-current="true"] { background: #28323e; box-shadow: none; }
+}
+@media (max-width: 720px) {
+  main { padding: 16px; }
+  .review-workspace { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .inventory { padding: 8px 10px; }
+  .inventory ol { max-height: 145px; overflow-y: auto; }
+  #batch-feedback, .review-footer { margin-left: 0; }
+  .page-header { gap: 8px; }
+}
