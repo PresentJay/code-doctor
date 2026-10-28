@@ -8,6 +8,12 @@ import {createTranslator,resolveLocale,translateDocument} from '../web/i18n.mjs'
 // Exercise the shipped handlers without a browser dependency; browser navigation is checked separately.
 const app = (await readFile(new URL('../web/app.mjs', import.meta.url), 'utf8')).replace(/^import[^\n]+\n/gm, '');
 const source = app.slice(0, app.indexOf("$('previous').addEventListener"));
+test('the selected code block precedes the collected feedback controls', async ()=>{
+  const html=await readFile(new URL('../web/index.html',import.meta.url),'utf8');
+  const code=html.indexOf('id="selected-block"'), feedback=html.indexOf('id="batch-feedback"');
+  assert.ok(code >= 0 && feedback > code, 'code must appear before collected feedback controls');
+  assert.ok(html.indexOf('id="submit-feedback"',feedback) > feedback, 'the feedback section must retain its finish action');
+});
 class Element {
   constructor() { this.hidden = true; this.value = ''; this.children = []; this.classList = {toggle() {}}; }
   append(...nodes) { this.children.push(...nodes); }
