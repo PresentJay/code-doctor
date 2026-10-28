@@ -8,6 +8,7 @@ import { createService } from '../src/service.mjs';
 const help = `Code Doctor 0.1.0-rc.2 (Node >=22, Git required)
   capture  --repo PATH [--base HEAD --task TEXT --kind change --issue URL --context FILE.json]
            Omitted base pins the saved comparison commit; explicit base starts a new comparison.
+           A different task when HEAD differs from the saved base needs a verified base.
            A different task starts fresh metadata. Omitted task reuses current context.
            Unchanged code preserves its plan.
   read     --repo PATH [--review ID --view full|outline|guide]

@@ -200,11 +200,13 @@ export async function createService(cwd) {
       return mutate(async () => {
         const previous = await latestOptional();
         const inherited = previous ? taskOptions(previous) : {};
+        const newTask = previous && options.task !== undefined && options.task !== previous.task.text;
         if (options.base !== undefined) delete inherited.baseCommit;
-        if (previous && options.task !== undefined && options.task !== previous.task.text) {
+        if (newTask) {
           delete inherited.kind; delete inherited.issue; delete inherited.context;
         }
         const review = await captureReview({...inherited, ...options, cwd:root});
+        if (newTask && options.base === undefined && review.headCommit !== previous.baseCommit) throw new Error('New task has a previous comparison base different from HEAD. Supply an explicit base verified for this task; HEAD can omit changes already committed.');
         if (previous && previous.fingerprint === review.fingerprint && sameTask(previous.task, review.task)) return previous;
         return save(review);
       });
