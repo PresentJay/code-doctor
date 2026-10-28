@@ -126,7 +126,7 @@ export async function startReviewServer({cwd, service, port = 0, session} = {}) 
         let result;
         try { result = await service.state({reviewId:url.searchParams.get('reviewId') ?? undefined}); }
         catch (error) { if (!url.search && error.message.startsWith('No review yet.')) result = empty(); else throw error; }
-        json(200, {...result, sessionBound:typeof session === 'string' && !!session.trim(), agentWaiting:waiting && waitingReviewId === result.review?.id});
+        json(200, {...result, sessionBound:typeof session === 'string' && !!session.trim(), agentWaiting:waiting && waitingReviewId === result.review?.id, reviewFinished:!!completion || finishing});
         return;
       }
       if (!['/api/feedback','/api/submit','/api/finish','/api/recapture'].includes(url.pathname)) throw fail(404, 'not-found', 'Not found.');

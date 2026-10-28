@@ -20,7 +20,7 @@ class Element {
 const opinion = (id, blockId, extra = {}) => ({id, blockId, reviewId:'review-1', repoRoot:'/fixture', task:{text:'fixture'}, fingerprint:'sha', version:1, state:'pending', text:`원문 ${id}\n둘째 줄`, ...extra});
 function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false) {
   const review = {id:'review-1',fingerprint:'sha',summary:'Original agent summary',task:{text:'Original request',kind:'fix'},units:[],blocks:[{id:'a',title:'첫 변경',comment:'Original explanation',unitIds:[]},{id:'b',title:'둘째 변경',comment:'Second explanation',unitIds:[]}]};
-  const initial = {review, sessionBound, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
+  const initial = {review, sessionBound, reviewFinished:false, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
   const elements = new Map();
   const document = {hidden:false,documentElement:{lang:language},querySelectorAll(){return [];}, getElementById(id) { if (!elements.has(id)) elements.set(id,new Element()); return elements.get(id); }, createElement() { return new Element(); }, createTextNode(text) { return {textContent:text}; }};
   let next = structuredClone(initial);
@@ -32,11 +32,11 @@ function fixture(clipboard = async () => { throw new Error('Clipboard unavailabl
         const saved = opinion(`new-${requests.length}`,'a',JSON.parse(options.body)); next.feedbacks.push(saved);
         return {ok:true,json:async()=>structuredClone(saved)};
       }
-      if (url==='/api/finish') return {ok:true,json:async()=>({waiting:true})};
+      if (url==='/api/finish') { next.reviewFinished=true; return {ok:true,json:async()=>({waiting:true})}; }
       return {ok:true,json:async()=>structuredClone(next)};
     }, initial:structuredClone(initial)};
   vm.runInNewContext(`${source}\nstate=initial; latest=initial; document.getElementById('selected-block').hidden=false;
-    globalThis.testApi={copyAllFeedback,submitFeedback,poll,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
+    globalThis.testApi={copyAllFeedback,submitFeedback,poll,loadInitial,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
       draft:(id,value)=>drafts.set('review-1:sha:'+id,value), saving:(value)=>{saving=value;},
       startOtherRequest:()=>{busy=true;}, isBusy:()=>busy, finished:(value)=>{finished=value;},
       simulateSaveResponse:()=>{state.feedbacks=state.feedbacks.map(item=>({...item,feedbackFile:'/fixture/'+item.id}));}, clearFeedback:()=>{state.feedbacks=[];},
@@ -64,6 +64,38 @@ test('review can finish without comments and does not create an instruction', as
   await f.api.submitFeedback();
   assert.deepEqual(f.requests.map(request=>request.url),['/api/finish']);
   assert.equal(f.requests[0].body.items.length,0);
+});
+
+test('reopening unchanged code enables a second batch without losing its draft', async ()=>{
+  const f=fixture(undefined,'ko',true);
+  f.api.clearFeedback(); f.change(state=>{state.feedbacks=[];});
+  await f.api.submitFeedback();
+  f.change(state=>{state.agentWaiting=true;});
+  await f.api.poll();
+  assert.equal(f.el('submit-feedback').disabled,true,'a completing wait is not a new round');
+  f.api.draft('a','Second round opinion'); f.el('opinion').value='Second round opinion';
+  f.change(state=>{state.reviewFinished=false;});
+  await f.api.poll();
+  assert.equal(f.el('submit-feedback').disabled,false);
+  assert.equal(f.el('opinion').value,'Second round opinion');
+  await f.api.submitFeedback();
+  const finishes=f.requests.filter(request=>request.url==='/api/finish');
+  assert.equal(finishes.length,2);
+  assert.equal(finishes[1].body.reviewId,'review-1');
+  assert.equal(finishes[1].body.items.length,1);
+  assert.equal(f.requests.find(request=>request.url==='/api/feedback').body.text,'Second round opinion');
+});
+
+test('a reloaded completed viewer stays completed until the server reopens it', async ()=>{
+  const f=fixture(undefined,'ko',true);
+  f.change(state=>{state.reviewFinished=true;});
+  await f.api.loadInitial();
+  assert.equal(f.el('submit-feedback').disabled,true);
+  const requests=f.requests.length;
+  await f.api.submitFeedback();
+  assert.equal(f.requests.length,requests,'a completed round cannot be submitted again');
+  f.api.changeLanguage('ja');
+  assert.equal(f.el('submit-feedback').disabled,true,'language changes must preserve completion');
 });
 
 test('a completed review waits for the agent before opening a new version and preserves drafts', async ()=>{
