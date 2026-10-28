@@ -25,6 +25,32 @@ function data(result) {
   assert.equal(result.isError, undefined, result.content?.[0]?.text);
   return JSON.parse(result.content[0].text);
 }
+test('a new task after commits requires an explicit comparison without losing its prior review', {timeout:30000}, async t=>{
+  const root = await fixture(t);
+  const service = await createService(root);
+  const original = await service.capture({task:'First task'});
+  git(root,'add','a.js'); git(root,'commit','-qm','first task');
+  await writeFile(path.join(root,'b.js'),'export const answer = 3;\n');
+  const cli = run(root,'capture','--task','Second task');
+  assert.notEqual(cli.status,0); assert.match(cli.stderr,/new task.*base/i);
+  const client = new Client({name:'comparison-boundary-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const rejected = await client.callTool({name:'capture_review',arguments:{task:'Second task'}});
+  assert.equal(rejected.isError,true); assert.match(rejected.content[0].text,/new task.*base/i);
+  assert.equal((await service.read()).id,original.id);
+  const correction = data(await client.callTool({name:'capture_review',arguments:{}}));
+  assert.equal(correction.baseCommit,original.baseCommit); assert.equal(correction.task.text,'First task');
+  await assert.rejects(()=>service.capture({task:'Second task'}),/new task.*base/i);
+  git(root,'add','b.js'); git(root,'commit','-qm','second task');
+  await writeFile(path.join(root,'c.js'),'export const answer = 4;\n');
+  const next = data(await client.callTool({name:'capture_review',arguments:{task:'Second task',base:'HEAD~1'}}));
+  assert.deepEqual([...new Set(next.units.map(unit=>unit.file))].sort(),['b.js','c.js']);
+  const fresh = run(root,'capture','--task','Third task','--base','HEAD');
+  assert.equal(fresh.status,0,fresh.stderr);
+  assert.deepEqual(JSON.parse(fresh.stdout).units.map(unit=>unit.file),['c.js']);
+  assert.equal((await service.read({reviewId:original.id})).id,original.id);
+});
 test('a new explicit task does not inherit unrelated task metadata across CLI and MCP', {timeout:30000}, async t=>{
   const root = await fixture(t);
   await mkdir(path.join(root,'.code-doctor'));
