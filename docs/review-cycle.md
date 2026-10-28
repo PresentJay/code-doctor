@@ -39,7 +39,7 @@ Use old/new sides explicitly, including rename paths and stage. Each range must 
 
 `read --view guide` returns every ordered comment, verified excerpt and exact target in one call. `read --view outline` keeps the inventory and identity without patches or excerpts. `block --view full` retrieves all patches for one block. All are read projections; they do not replace the saved original.
 
-For focused guide/block output, `coverage.changedLines` counts actual additions and deletions and `shownChangedLines` counts those included in this output. `unshown` identifies remaining ranges by unit, file, stage and side. `nonLineUnitIds` keeps changes that cannot be represented by changed lines. Explain the excerpt's boundary in ordinary language, not a new checklist. Included code does not mean it was read, understood or approved.
+For focused guide/block output, `coverage.changedLines` counts actual additions and deletions and `shownChangedLines` counts those included in this output. `unshown` identifies remaining ranges by unit, file, stage and side. `nonLineUnitIds` also flags renames and mode changes alongside text, as well as changes with no text lines. Explain the excerpt's boundary in ordinary language, not a new checklist. Included code does not mean it was read, understood or approved.
 
 Use native comment/navigation tools or host-documented response syntax only when actually available and able to represent the captured target. Otherwise show all blocks together in the conversation. Do not attach an old-side or index excerpt to a different checkout line or emit a host-specific directive in another client.
 
