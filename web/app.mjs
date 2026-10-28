@@ -439,10 +439,9 @@ function selectBlock(position, focus = false) {
 
 function applyState(next, { keepBlock = false } = {}) {
   const previousBlock = block()?.id;
-  const previousReview = state?.review?.id;
   preserveDraft();
   state = next;
-  if (previousReview !== state.review?.id) finished = false;
+  finished = state.reviewFinished === true;
   $('loading').hidden = true;
   $('error').hidden = true;
   $('review-content').hidden = false;
@@ -626,7 +625,7 @@ async function copyAllFeedback() {
 }
 
 async function submitFeedback() {
-  if (!state?.sessionBound || !isCurrent() || busy || saving) return;
+  if (!state?.sessionBound || !isCurrent() || busy || saving || finished) return;
   const reviewId = state.review.id;
   const draftsToSave = unsavedBlocks().map(item => ({blockId:item.id,text:drafts.get(`${reviewId}:${state.review.fingerprint ?? ''}:${item.id}`)}));
   const items = collectedFeedback().map(({id,version}) => ({id,version:version ?? 1}));
@@ -644,7 +643,7 @@ async function submitFeedback() {
     if (latest?.review?.id === reviewId) latest.feedbacks = state.feedbacks;
     renderFeedback();
     const result = await api('/api/finish', {reviewId,items});
-    finished = true;
+    finished = state.reviewFinished = true;
     setStatus(result.waiting ? msg("Review complete. Check the original agent's response.") : msg("Review saved, but no agent was waiting. Ask the original agent to continue."), false, true);
   } catch (error) { setStatus(error.message, true, true); }
   finally { busy = false; updateFreshness(); }
@@ -682,6 +681,7 @@ async function poll() {
       return;
     }
     if (state.review?.id === next.review?.id) {
+      finished = state.reviewFinished = next.reviewFinished === true;
       state.freshness = next.freshness;
       state.history = next.history;
       state.previousReviewId = next.previousReviewId;
