@@ -352,6 +352,58 @@ test('review, temporary and feedback destinations must each be ignored and untra
   assert.equal(JSON.parse(await readFile(path.join(root,'.code-doctor/review.json'),'utf8')).id,review.id);
 });
 
+test('Git bookkeeping alone cannot mark feedback addressed', {timeout:60000}, async t=>{
+  for (const scenario of ['empty commit', 'base alias', 'stage move', 'new file staged', 'partial staging', 'split hunk staging']) await t.test(scenario, async t=>{
+    const root = await fixture(t);
+    if (scenario === 'partial staging' || scenario === 'split hunk staging') {
+      const lines = Array.from({length:40},(_,index)=>`line ${index + 1}`);
+      await writeFile(path.join(root,'a.js'),lines.join('\n')+'\n');
+      git(root,'add','a.js'); git(root,'commit','-qm','long file');
+      lines[1]='change one'; lines[scenario === 'partial staging' ? 35 : 5]='change two';
+      await writeFile(path.join(root,'a.js'),lines.join('\n')+'\n');
+    }
+    if (scenario === 'new file staged') await writeFile(path.join(root,'b.js'),'export const value = 2;\n');
+    const service = await createService(root);
+    const original = await service.capture({task:'Fix the answer'});
+    const opinion = await service.feedback({reviewId:original.id,blockId:original.blocks[0].id,text:'Change answer to 3'});
+    if (scenario === 'empty commit' || scenario === 'base alias') git(root,'commit','--allow-empty','-qm','bookkeeping');
+    if (scenario === 'stage move') git(root,'add','a.js');
+    if (scenario === 'new file staged') git(root,'add','b.js');
+    if (scenario === 'partial staging') execFileSync('git',['-C',root,'add','-p','a.js'],{input:'y\nn\n',stdio:['pipe','pipe','pipe']});
+    if (scenario === 'split hunk staging') execFileSync('git',['-C',root,'add','-p','a.js'],{input:'s\ny\nn\n',stdio:['pipe','pipe','pipe']});
+    const revised = await service.capture(scenario === 'base alias' ? {base:'HEAD^'} : {});
+    assert.notEqual(revised.fingerprint,original.fingerprint);
+    await assert.rejects(()=>service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:revised.id,resolution:'addressed',note:'No code correction'}),/Source has not changed/);
+    if (scenario === 'empty commit') {
+      const cli = run(root,'resolve','--feedback',opinion.id,'--version','1','--review',revised.id,'--resolution','addressed','--note','No code correction');
+      assert.notEqual(cli.status,0); assert.match(cli.stderr,/Source has not changed/);
+      const client = new Client({name:'unchanged-source-test',version:'1.0.0'});
+      t.after(()=>client.close());
+      await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+      const rejected = await client.callTool({name:'resolve_feedback',arguments:{feedbackId:opinion.id,expectedVersion:1,reviewId:revised.id,resolution:'addressed',note:'No code correction'}});
+      assert.equal(rejected.isError,true); assert.match(rejected.content[0].text,/Source has not changed/);
+    }
+    assert.equal((await service.feedbacks({reviewId:original.id}))[0].state,'pending');
+    assert.equal((await service.read({reviewId:original.id})).id,original.id);
+    await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
+    const corrected = await service.capture();
+    assert.equal((await service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:corrected.id,resolution:'addressed',note:'Answer changed to 3'})).state,'addressed');
+  });
+  await t.test('different comparison commit', async t=>{
+    const root = await fixture(t), service = await createService(root);
+    const original = await service.capture({task:'Fix the answer'});
+    const opinion = await service.feedback({reviewId:original.id,blockId:original.blocks[0].id,text:'Change answer to 3'});
+    git(root,'add','a.js'); git(root,'commit','-qm','existing change');
+    const reset = await service.capture({base:'HEAD'});
+    await assert.rejects(()=>service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:reset.id,resolution:'addressed',note:'Changed comparison only'}),/different comparison commits/);
+    assert.equal((await service.feedbacks({reviewId:original.id}))[0].state,'pending');
+  });
+  const root = await fixture(t), service = await createService(root);
+  const review = await service.capture({task:'Dismiss an opinion'});
+  const opinion = await service.feedback({reviewId:review.id,blockId:review.blocks[0].id,text:'Do not apply this'});
+  assert.equal((await service.resolve({feedbackId:opinion.id,expectedVersion:1,reviewId:review.id,resolution:'dismissed',note:'Explicitly declined'})).state,'dismissed');
+});
+
 test('recapture pins the original comparison commit across commits and only explicit base resets it', {timeout:30000}, async t=>{
   const root = await fixture(t);
   const service = await createService(root);
