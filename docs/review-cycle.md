@@ -55,7 +55,7 @@ Record delivered feedback against its exact block and review. Do not read unsent
 
 Verify the exact listed IDs, versions and original text before applying a copied batch. Do not include later or unrelated opinions. Report conflicting instructions before changing code. Apply compatible authorized changes together, run appropriate checks, then capture and plan one revised review. Omit base and task context fields during recapture to preserve the original comparison and task identity. If feedback replaces an earlier requirement, explain that in the revised summary and blocks instead of rewriting the original context.
 
-Resolve each opinion separately with its expected version, revised reviewId and evidence. `addressed` requires changed source and the same task context, but a changed fingerprint alone does not prove the requested correction. Use `dismissed` only for an explicit, explained decision.
+Resolve each opinion separately with its expected version, revised reviewId and evidence. `addressed` requires the same task and comparison commit, and changed captured patches or file metadata; a new HEAD, comparison label or stage alone does not count. Changes to captured patches cannot prove the requested correction. If the comparison commit changed, recapture using the original commit before resolving. Use `dismissed` only for an explicit, explained decision.
 
 ## Optional viewer and storage
 

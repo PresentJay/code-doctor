@@ -76,7 +76,7 @@ export async function startMcp(cwd) {
     tool('read_submitted_feedback', 'Read the exact batch explicitly submitted by the person for this host session or this conversation’s private viewer handoffKey. A changed status means code, review or opinions changed; do not silently apply it. This does not wake an idle agent.', {
       session:z.string().min(1).max(500),
     }, call('submitted'), true);
-    tool('resolve_feedback', 'Explicitly record how one pending opinion was handled. Addressed requires newly captured changed source and matching task context; note must explain evidence. This never edits source or grants approval.', {
+    tool('resolve_feedback', 'Explicitly record how one pending opinion was handled. Addressed requires changed captured source, the same task and original comparison commit; note must explain evidence. This never edits source or grants approval.', {
       feedbackId:z.string(), expectedVersion:z.number().int().min(1), reviewId:z.string(),
       resolution:z.enum(['addressed','dismissed']), note:z.string().min(1).max(8000),
     }, call('resolve'));
