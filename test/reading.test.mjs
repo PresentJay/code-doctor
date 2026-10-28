@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -169,6 +169,32 @@ test('unshown changes keep every file, stage and old/new coordinate instead of t
   assert.equal(full.coverage.changedLines,124); assert.equal(full.coverage.shownChangedLines,124);
   assert.deepEqual(full.coverage.unshown,[]); assert.deepEqual(full.units,planned.units);
   assert.equal((await service.read()).id,planned.id,'coverage is a read projection, not a new review revision');
+});
+
+for (const metadata of ['rename','mode','both']) test(`focused code retains ${metadata} metadata alongside text changes`, async t=>{
+  const {root,service} = await fixture(t);
+  const file=metadata === 'mode' ? 'tracked.mjs' : 'renamed.mjs';
+  if (metadata !== 'mode') git(root,'mv','tracked.mjs',file);
+  const text = Array.from({length:120},(_,i)=>`export const value${i+1} = ${i+1};`);
+  text[60] = 'export const value61 = 999;';
+  await writeFile(path.join(root,file),text.join('\n')+'\n');
+  if (metadata !== 'rename') await chmod(path.join(root,file),0o755);
+  git(root,'add',file);
+  const captured=await service.capture();
+  const changed=captured.units.find(unit=>unit.file===file && unit.stage==='index');
+  if (metadata !== 'mode') assert.equal(changed.previousFile,'tracked.mjs');
+  if (metadata !== 'rename') assert.notEqual(changed.oldMode,changed.newMode);
+  const planned=await service.plan({reviewId:captured.id,summary:'Read code and metadata',blocks:[{
+    id:'all',title:'Changes',comment:'Check code and file metadata',importance:'high',unitIds:captured.units.map(unit=>unit.id),
+    focus:[{unitId:changed.id,side:'new',startLine:61,endLine:61}],
+  }]});
+  const block=await service.block();
+  assert.ok(block.coverage.nonLineUnitIds.includes(changed.id));
+  assert.ok(!block.coverage.nonLineUnitIds.includes(captured.units.find(unit=>unit.file==='long.mjs').id));
+  assert.equal(block.excerpts[0].rows[0].text,'export const value61 = 999;');
+  assert.deepEqual((await service.read({view:'guide'})).blocks[0].coverage,block.coverage);
+  assert.equal((await service.block({view:'full'})).units.find(unit=>unit.id===changed.id).patch,changed.patch);
+  assert.equal((await service.read()).id,planned.id);
 });
 
 test('focus rejects missing, fabricated, foreign, overlapping and excessive ranges with valid boundary controls', async t=>{
