@@ -25,6 +25,29 @@ function data(result) {
   assert.equal(result.isError, undefined, result.content?.[0]?.text);
   return JSON.parse(result.content[0].text);
 }
+test('a new explicit task does not inherit unrelated task metadata across CLI and MCP', {timeout:30000}, async t=>{
+  const root = await fixture(t);
+  await mkdir(path.join(root,'.code-doctor'));
+  const contextFile = path.join(root,'.code-doctor','context.json');
+  await writeFile(contextFile,JSON.stringify({requirements:['First task requirement']}));
+  const firstResult = run(root,'capture','--task','First task','--kind','fix','--issue','issue:first','--context',contextFile);
+  assert.equal(firstResult.status,0,firstResult.stderr);
+  const first = JSON.parse(firstResult.stdout);
+  const client = new Client({name:'task-context-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  assert.deepEqual(data(await client.callTool({name:'capture_review',arguments:{}})).task,first.task);
+  assert.deepEqual(data(await client.callTool({name:'capture_review',arguments:{task:'First task'}})).task,first.task);
+  const second = data(await client.callTool({name:'capture_review',arguments:{task:'Second task',kind:'experiment'}}));
+  assert.deepEqual(second.task,{text:'Second task',kind:'experiment',issue:''});
+  assert.equal(second.baseCommit,first.baseCommit);
+  assert.deepEqual(data(await client.callTool({name:'read_review',arguments:{reviewId:first.id}})).task,first.task);
+  const thirdResult = run(root,'capture','--task','Third task');
+  assert.equal(thirdResult.status,0,thirdResult.stderr);
+  assert.deepEqual(JSON.parse(thirdResult.stdout).task,{text:'Third task',kind:'change',issue:''});
+  const fourth = data(await client.callTool({name:'capture_review',arguments:{task:'Fourth task',kind:'fix',issue:'issue:fourth',context:{requirements:['Fourth task requirement']}}}));
+  assert.deepEqual(fourth.task,{text:'Fourth task',kind:'fix',issue:'issue:fourth',context:{requirements:['Fourth task requirement'],acceptanceCriteria:[],references:[]}});
+});
 test('CLI and actual stdio MCP share source, exact coverage and stale feedback behavior', {timeout:30000}, async t=>{
   const root = await fixture(t);
   const cli = run(root,'capture','--task','값을 바꿔줘','--issue','https://github.com/example/repo/issues/1');
