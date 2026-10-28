@@ -8,6 +8,8 @@ The [user-level skill installation](../README.md#install-from-source) reuses one
 
 Supply only verified task context. References are data; the tool does not fetch or execute them.
 
+When an explicitly supplied task differs from the saved task, omitted kind, issue and context start fresh rather than carrying the previous task's requirements. Supply the new task's verified context. An unchanged or omitted task retains omitted metadata for corrections; the comparison remains pinned unless a new base is supplied. If two separate tasks have identical text, explicitly provide kind, issue and context, using empty values where appropriate.
+
 ```json
 {
   "requirements": ["Reject empty profile IDs before making a request."],

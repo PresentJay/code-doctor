@@ -201,6 +201,9 @@ export async function createService(cwd) {
         const previous = await latestOptional();
         const inherited = previous ? taskOptions(previous) : {};
         if (options.base !== undefined) delete inherited.baseCommit;
+        if (previous && options.task !== undefined && options.task !== previous.task.text) {
+          delete inherited.kind; delete inherited.issue; delete inherited.context;
+        }
         const review = await captureReview({...inherited, ...options, cwd:root});
         if (previous && previous.fingerprint === review.fingerprint && sameTask(previous.task, review.task)) return previous;
         return save(review);
