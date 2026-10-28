@@ -57,7 +57,7 @@ export function blockContent(review, block, view = 'focus') {
   const coverage = {changedLines:0,shownChangedLines:0,unshown:[],nonLineUnitIds:[]};
   for (const unit of units) {
     const changes = patchRows(unit.patch).filter(row=>row.type !== 'context');
-    if (!changes.length || unit.previousFile || (unit.oldMode !== '000000' && unit.newMode !== '000000' && unit.oldMode !== unit.newMode)) coverage.nonLineUnitIds.push(unit.id);
+    if (!changes.length || unit.previousFile || (unit.oldMode !== unit.newMode && ((unit.oldMode !== '000000' && unit.newMode !== '000000') || unit.newMode === '100755'))) coverage.nonLineUnitIds.push(unit.id);
     for (const row of changes) {
       const side = row.type === 'deletion' ? 'old' : 'new';
       const line = row[`${side}Line`];

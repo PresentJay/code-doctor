@@ -197,6 +197,19 @@ for (const metadata of ['rename','mode','both']) test(`focused code retains ${me
   assert.equal((await service.read()).id,planned.id);
 });
 
+test('focused new executable retains its permission signal', async t=>{
+  const {root,service}=await fixture(t);
+  await chmod(path.join(root,'long.mjs'),0o755);
+  const captured=await service.capture();
+  const unit=captured.units.find(item=>item.file==='long.mjs');
+  assert.equal(unit.oldMode,'000000'); assert.equal(unit.newMode,'100755');
+  await service.plan({reviewId:captured.id,summary:'Review new executable',blocks:[{
+    id:'new',title:'New executable',comment:'Check code and executable mode',importance:'high',unitIds:[unit.id],
+    focus:[{unitId:unit.id,side:'new',startLine:61,endLine:61}],
+  }]});
+  assert.deepEqual((await service.block()).coverage.nonLineUnitIds,[unit.id]);
+});
+
 test('focus rejects missing, fabricated, foreign, overlapping and excessive ranges with valid boundary controls', async t=>{
   const {review,unit,focus} = await fixture(t);
   const plan = selection => applyPlan(review,{summary:'검토',blocks:[{...review.blocks[0],focus:selection}]});
