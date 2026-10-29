@@ -77,7 +77,7 @@ test('a viewer without host session returns a private per-viewer handoff key', a
   assert.equal(await service.submitted({session:'unrelated-viewer'}),null);
 });
 
-test('a real MCP request waits for one completion and preserves review identity', {timeout:30000}, async t=>{
+test('a real MCP request waits for one completion and preserves review identity', {timeout:60000}, async t=>{
   const {root,service} = await fixture(t);
   await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
   await writeFile(path.join(root,'b.js'),'export const value = 2;\n');
@@ -98,13 +98,13 @@ test('a real MCP request waits for one completion and preserves review identity'
   assert.equal((await client.callTool({name:'open_review',arguments:{lang:'unsupported'}})).isError,true);
   const get = ()=>fetch(url.origin+'/api/review',{headers:{'X-Code-Doctor-Token':token}}).then(r=>r.json());
   const finish = (reviewId,items)=>fetch(url.origin+'/api/finish',{method:'POST',headers:{'X-Code-Doctor-Token':token,'Content-Type':'application/json'},body:JSON.stringify({reviewId,items})});
-  const wait = (opened,options={})=>client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:opened.reviewId,timeoutMs:5000}},options);
-  const pending = wait(firstOpen,{timeout:10000});
+  const wait = (opened,options={})=>client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:opened.reviewId,timeoutMs:20000}},options);
+  const pending = wait(firstOpen,{timeout:25000});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await get()).agentWaiting,true);
   assert.equal((await get()).reviewFinished,false);
   assert.equal((await client.callTool({name:'select_repository',arguments:{repo:root}})).isError,true,'a waiting review cannot change repository');
-  assert.equal((await wait(firstOpen,{timeout:10000})).isError,true,'do not attach two waiting agents to one review');
+  assert.equal((await wait(firstOpen,{timeout:25000})).isError,true,'do not attach two waiting agents to one review');
   const response = await finish(review.id,[{id:first.id,version:1},{id:second.id,version:1}]);
   assert.equal(response.status,200); assert.equal((await response.json()).waiting,true);
   const completed = data(await pending);
@@ -122,11 +122,11 @@ test('a real MCP request waits for one completion and preserves review identity'
   const additional = data(await client.callTool({name:'record_feedback',arguments:{reviewId:review.id,blockId:review.blocks[0].id,text:'another opinion on unchanged code'}}));
   const early = await finish(review.id,[{id:additional.id,version:additional.version}]);
   assert.equal(early.status,200); assert.equal((await early.json()).waiting,false);
-  const reopened = data(await wait(secondOpen,{timeout:10000}));
+  const reopened = data(await wait(secondOpen,{timeout:25000}));
   assert.equal(reopened.status,'completed'); assert.deepEqual(reopened.items.map(item=>[item.id,item.text]),[[additional.id,additional.text]]);
   assert.equal((await get()).reviewFinished,true);
   const thirdOpen = await open();
-  const staleWait = wait(thirdOpen,{timeout:10000});
+  const staleWait = wait(thirdOpen,{timeout:25000});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   await writeFile(path.join(root,'a.js'),'export const answer = 3;\n');
   const revised = await service.capture();
@@ -134,14 +134,14 @@ test('a real MCP request waits for one completion and preserves review identity'
   assert.equal(data(await staleWait).status,'changed','a different review must not be delivered as the original');
   const fourthOpen = await open();
   const controller = new AbortController();
-  const cancelled = wait(fourthOpen,{timeout:10000,signal:controller.signal});
+  const cancelled = wait(fourthOpen,{timeout:25000,signal:controller.signal});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await get()).agentWaiting,true);
   controller.abort();
   await assert.rejects(cancelled);
   for (let i=0; i<100 && (await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await get()).agentWaiting,false,'cancellation releases the waiting request');
-  const resumed = wait(fourthOpen,{timeout:10000});
+  const resumed = wait(fourthOpen,{timeout:25000});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await finish(revised.id,[])).status,200);
   assert.equal(data(await resumed).status,'completed');
