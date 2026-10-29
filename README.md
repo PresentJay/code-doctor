@@ -19,7 +19,7 @@ npm ci --ignore-scripts --no-fund
 node bin/code-doctor.mjs install --host both
 ```
 
-Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook and a discoverable skill to each selected host's user settings, plus a user-level MCP entry for Codex, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
+Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook, a discoverable skill and a user-level MCP entry to each selected host, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
 
 Open a new session. **Codex requires one initial hook review/trust through `/hooks`.** Installation cannot grant that trust. Claude may require a restart to load changed settings. After activation, ordinary development prompts in Git repositories receive guidance automatically; you do not have to name Code Doctor or configure each repository. When a conversation starts outside Git, the hook supplies discovery instructions; the agent checks the actual task repository and session preferences before applying guidance. Unrelated questions stay quiet. No background model process or browser is started.
 
@@ -44,7 +44,7 @@ Session controls add `--scope session --session ID` using the actual session ID 
 
 ### Optional project MCP connection
 
-The Codex user-level installer includes MCP. For Claude, or when a project-specific MCP configuration is preferred, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
+The user-level installer includes MCP for Codex and Claude. When a project-specific MCP configuration is preferred, first ignore `/.code-doctor/` in its local Git exclude or `.gitignore`, then run:
 
 ```sh
 node bin/code-doctor.mjs setup --repo "$PROJECT" --host both
