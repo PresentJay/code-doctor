@@ -48,6 +48,25 @@ test('Codex user installation adds an idempotent MCP entry without overwriting o
  assert.throws(()=>f.cli('install','--host','codex'),/differs or was edited/);
  assert.equal(await readFile(path.join(f.home,'.codex/hooks.json'),'utf8'),hooks);
 });
+test('Claude user installation preserves other servers and rejects an edited entry',async t=>{
+ const f=await fixture(t); await mkdir(f.env.CLAUDE_CONFIG_DIR);
+ const file=path.join(f.env.CLAUDE_CONFIG_DIR,'.claude.json');
+ await writeFile(file,JSON.stringify({custom:'keep',mcpServers:{other:{command:'other'}}}));
+ f.cli('install','--host','claude'); const installed=await readFile(file,'utf8'), config=JSON.parse(installed);
+ assert.equal(config.custom,'keep'); assert.deepEqual(config.mcpServers.other,{command:'other'});
+ assert.equal(config.mcpServers['code-doctor'].type,'stdio'); assert.equal(config.mcpServers['code-doctor'].command,process.execPath);
+ assert.deepEqual(config.mcpServers['code-doctor'].args,[entry,'mcp']);
+ f.cli('install','--host','claude'); assert.equal(await readFile(file,'utf8'),installed);
+ config.mcpServers['code-doctor'].command='changed'; await writeFile(file,JSON.stringify(config));
+ const hooks=await readFile(path.join(f.env.CLAUDE_CONFIG_DIR,'settings.json'),'utf8');
+ assert.throws(()=>f.cli('install','--host','claude'),/differs or was edited/);
+ assert.equal(await readFile(path.join(f.env.CLAUDE_CONFIG_DIR,'settings.json'),'utf8'),hooks);
+});
+test('Claude user MCP defaults to the home configuration when no override is set',async t=>{
+ const f=await fixture(t); delete f.env.CLAUDE_CONFIG_DIR; f.cli('install','--host','claude');
+ const config=JSON.parse(await readFile(path.join(f.home,'.claude.json'),'utf8'));
+ assert.deepEqual(config.mcpServers['code-doctor'].args,[entry,'mcp']);
+});
 test('repository, session and global controls persist and installation never resets opt-outs',async t=>{
  const f=await fixture(t);f.cli('install');assert.ok(f.hook());
  f.cli('disable','--repo',f.repo);assert.match(f.hook(),/Code Doctor — controls only/);assert.ok(f.hook(f.other));

@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {isDeepStrictEqual} from 'node:util';
-import {jsonDocument, hash, skillFile, codexConfig} from './setup-config.mjs';
+import {jsonDocument, hash, skillFile, codexConfig, claudeConfig} from './setup-config.mjs';
 import {updateSetupFiles} from './setup.mjs';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -71,6 +71,7 @@ export async function installAutomatic({host = 'both'}) {
   const hosts = host === 'both' ? ['codex','claude'] : [host];
   const configs = hosts.map(name => name === 'codex' ? path.join(process.env.CODEX_HOME || path.join(homedir(),'.codex'),'hooks.json') : path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(),'.claude'),'settings.json'));
   const codexMcp = hosts.includes('codex') ? path.join(process.env.CODEX_HOME || path.join(homedir(),'.codex'),'config.toml') : undefined;
+  const claudeMcp = hosts.includes('claude') ? (process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR,'.claude.json') : path.join(homedir(),'.claude.json')) : undefined;
   if (configs.some(file => !path.isAbsolute(file))) throw new Error('Host configuration directories must be absolute.');
   const candidates = hosts.map(name => path.join(name === 'codex' ? path.join(homedir(),'.agents') : process.env.CLAUDE_CONFIG_DIR || path.join(homedir(),'.claude'), 'skills/code-doctor/SKILL.md'));
   const skills = [];
@@ -83,7 +84,7 @@ export async function installAutomatic({host = 'both'}) {
   const canonical = await readFile(skill,'utf8');
   const installed = canonical.replace('# Code Doctor\n', '# Code Doctor\n\nThis user installation uses '+command()+' with an explicit --repo. Read '+JSON.stringify(skill)+' for the full source skill. Do not resolve a sibling launcher from this copied skill.\n');
   const group = {hooks:[{type:'command',command:command('hook'),timeout:3}]};
-  await update([...configs,...skills,...(codexMcp ? [codexMcp] : []),settingsFile()], read => {
+  await update([...configs,...skills,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : []),settingsFile()], read => {
     const value = settings(read(settingsFile())), outputs = new Map();
     for (const file of configs) {
       const text = read(file), config = text === undefined ? {} : jsonDocument(text,file);
@@ -104,10 +105,15 @@ export async function installAutomatic({host = 'both'}) {
       outputs.set(codexMcp,codexConfig(read(codexMcp),{'code-doctor':{command:process.execPath,args:[entry,'mcp']}},managed,codexMcp));
       if (managed['code-doctor']) value.managed[codexMcp] = managed['code-doctor'];
     }
+    if (claudeMcp) {
+      const managed = value.managed[claudeMcp] ? {'code-doctor':value.managed[claudeMcp]} : {};
+      outputs.set(claudeMcp,claudeConfig(read(claudeMcp),{'code-doctor':{type:'stdio',command:process.execPath,args:[entry,'mcp'],env:{}}},managed,claudeMcp));
+      value.managed[claudeMcp] = managed['code-doctor'];
+    }
     outputs.set(settingsFile(),encode(value));
     return outputs;
   });
-  return {status:'installed-awaiting-host-activation',hosts,files:[...configs,...candidates,...(codexMcp ? [codexMcp] : [])],
+  return {status:'installed-awaiting-host-activation',hosts,files:[...configs,...candidates,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : [])],
     note:'Open a new session. Codex requires one-time review and trust of this hook via /hooks; installation cannot grant trust. Normal development prompts then receive guidance automatically. Existing opt-outs are preserved. Wrappers must load these user settings.'};
 }
 
