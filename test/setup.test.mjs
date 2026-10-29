@@ -138,6 +138,14 @@ test('identical unmanaged servers and skills are adopted without removing extra 
   assert.equal((await json(root, manifestPath)).skills[skillPaths[0]], sha256(canonicalSkill));
 });
 
+test('project setup rejects a non-stdio Claude server even when its command matches', async t => {
+  const root = await fixture(t);
+  await put(root, '.mcp.json', JSON.stringify({mcpServers:{'code-doctor':{...server(root),type:'http'}}}));
+  const before = await snapshot(root);
+  await assert.rejects(() => setup({repo:root,host:'claude'}), /differs or was edited/);
+  assert.deepEqual(await snapshot(root), before);
+});
+
 test('retired ownership records are forgotten without changing unrelated servers', async t => {
   const root = await fixture(t);
   await setup({repo:root});

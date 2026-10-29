@@ -57,6 +57,11 @@ test('Claude user installation preserves other servers and rejects an edited ent
  assert.equal(config.mcpServers['code-doctor'].type,'stdio'); assert.equal(config.mcpServers['code-doctor'].command,process.execPath);
  assert.deepEqual(config.mcpServers['code-doctor'].args,[entry,'mcp']);
  f.cli('install','--host','claude'); assert.equal(await readFile(file,'utf8'),installed);
+ config.mcpServers['code-doctor'].type='http'; await writeFile(file,JSON.stringify(config));
+ const before=await readFile(file,'utf8');
+ assert.throws(()=>f.cli('install','--host','claude'),/differs or was edited/);
+ assert.equal(await readFile(file,'utf8'),before);
+ config.mcpServers['code-doctor'].type='stdio';
  config.mcpServers['code-doctor'].command='changed'; await writeFile(file,JSON.stringify(config));
  const hooks=await readFile(path.join(f.env.CLAUDE_CONFIG_DIR,'settings.json'),'utf8');
  assert.throws(()=>f.cli('install','--host','claude'),/differs or was edited/);

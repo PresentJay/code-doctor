@@ -68,7 +68,7 @@ export function claudeConfig(text, servers, managed, file) {
   for (const [name, server] of Object.entries(servers)) {
     const current = next.mcpServers[name];
     if (Object.hasOwn(next.mcpServers, name)) {
-      if (!object(current)) throw conflict(`${file} (mcpServers.${name})`);
+      if (!object(current) || (current.type !== undefined && current.type !== 'stdio')) throw conflict(`${file} (mcpServers.${name})`);
       if (!sameCommand(current, server)) {
         if (managed[name] !== commandHash(current)) throw conflict(`${file} (mcpServers.${name})`);
         next.mcpServers[name] = {...server, ...current, command:server.command, args:server.args};
