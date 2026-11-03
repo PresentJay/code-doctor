@@ -11,8 +11,8 @@ export async function startMcp(cwd) {
     servicePromise = undefined;
     throw new Error(`No working Git repository. Select the actual task repository with select_repository. ${error.message}`);
   });
-  let viewer, viewerSession;
-  const closeViewer = () => viewer?.then(value => value.close()).catch(() => {});
+  const viewers = new Map();
+  const closeViewer = () => Promise.all([...viewers.values()].map(({promise}) => promise.then(value => value.close()).catch(() => {})));
   process.stdin.once('end', closeViewer);
   const stdio = serveStdio(() => {
     const server = new McpServer({name:'code-doctor', version:'0.1.0-rc.2'}, {capabilities:{tools:{}}});
@@ -38,14 +38,13 @@ export async function startMcp(cwd) {
       });
     };
     const call = name => async input => (await service())[name](input);
-    tool('select_repository', 'Select the absolute path of the actual task Git repository before using Code Doctor when the host starts outside it. Do not guess a repository. Switching while another tool or review viewer is active is not allowed.', {repo:z.string().min(1).max(4096)}, async ({repo}) => {
+    tool('select_repository', 'Select the absolute path of the actual task Git repository before using Code Doctor when the host starts outside it. Do not guess a repository. Switching while another tool is active is not allowed; open viewers retain their own repositories.', {repo:z.string().min(1).max(4096)}, async ({repo}) => {
       if (!path.isAbsolute(repo)) throw new Error('Provide an absolute task repository path.');
       if (active > 1) throw new Error('Cannot switch repository while another tool is active.');
       switching = true;
       try {
         const selected = await createService(repo);
-        if (viewer && (await service()).root !== selected.root) throw new Error('Cannot switch repository while a review viewer is active.');
-        if (!viewer) servicePromise = Promise.resolve(selected);
+        servicePromise = Promise.resolve(selected);
         return {repo:selected.root};
       } finally { switching = false; }
     });
@@ -82,10 +81,14 @@ export async function startMcp(cwd) {
     }, call('resolve'));
     tool('open_review', 'Open the optional local review. Set lang to the person’s preferred language when known. Show its URL to the person, then call wait_for_review with its waitId and the current review ID. Do not publish the local access token or waitId.', {session:z.string().min(1).max(500).optional(),lang:z.enum(['en','ko','ja','zh-CN']).optional()}, async ({session,lang}) => {
       const selected = await service();
-      if (viewer && viewerSession !== session) throw new Error('This viewer is already bound to a different host session.');
-      viewerSession = session;
-      viewer ??= startReviewServer({service:selected,session}).then(value => { value.server.unref(); return value; }).catch(error => { viewer = undefined; throw error; });
-      const opened = await viewer;
+      let viewer = viewers.get(selected.root);
+      if (viewer && viewer.session !== session) throw new Error('This viewer is already bound to a different host session.');
+      if (!viewer) {
+        viewer = {session};
+        viewer.promise = startReviewServer({service:selected,session}).then(value => { value.server.unref(); return value; }).catch(error => { viewers.delete(selected.root); throw error; });
+        viewers.set(selected.root,viewer);
+      }
+      const opened = await viewer.promise;
       const current = await selected.read().catch(error => { if (error.message.startsWith('No review yet.')) return null; throw error; });
       const url = lang ? `${opened.url}&lang=${encodeURIComponent(lang)}` : opened.url;
       return {url,repo:selected.root,waitId:opened.prepareWait(),reviewId:current?.id ?? null,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:'Wait for review completion; a timeout or cancellation is not a completed review.'};
@@ -93,8 +96,9 @@ export async function startMcp(cwd) {
     tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Call after showing the open_review URL. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
       waitId:z.string().regex(/^[a-f0-9]{48}$/),reviewId:z.string().regex(/^review-[a-f0-9]{24}$/),timeoutMs:z.number().int().min(100).max(900000).default(600000),
     }, async ({waitId,reviewId,timeoutMs},context) => {
+      const viewer = viewers.get((await service()).root);
       if (!viewer) throw new Error('Open a review before waiting.');
-      return (await viewer).waitForReview({id:waitId,reviewId,timeoutMs,signal:context.mcpReq.signal});
+      return (await viewer.promise).waitForReview({id:waitId,reviewId,timeoutMs,signal:context.mcpReq.signal});
     }, true);
     return server;
   });
