@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import vm from 'node:vm';
+import {captureReview} from '../src/review.mjs';
 import {focusExcerpts,patchLineCount,patchRows} from '../src/reading.mjs';
 import {createTranslator,resolveLocale,translateDocument} from '../web/i18n.mjs';
 
@@ -140,6 +144,23 @@ test('full diff counts suppressed blank context with the same coordinates as the
   const added = code.children.find(node=>node.className==='diff-row addition');
   assert.equal(added.children[1].textContent,'3');
   assert.equal(code.children.filter(node=>node.className==='diff-row context-line').length,2);
+});
+
+test('a committed change against an older base is not presented as staged', async t=>{
+  const root=await mkdtemp(path.join(tmpdir(),'code-doctor-review-label-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']});
+  git('init','-q'); git('config','user.name','Code Doctor Test'); git('config','user.email','test@example.invalid');
+  await writeFile(path.join(root,'file.txt'),'before\n'); git('add','file.txt'); git('commit','-qm','base');
+  const base=git('rev-parse','HEAD').trim();
+  await writeFile(path.join(root,'file.txt'),'after\n'); git('add','file.txt'); git('commit','-qm','change');
+  assert.equal(git('status','--porcelain'),''); assert.equal(git('diff','--cached','--stat'),'');
+  const review=await captureReview({cwd:root,base});
+  assert.equal(review.units.length,1); assert.equal(review.units[0].stage,'index');
+  for(const [locale,label] of [['en','Base to index'],['ko','기준 대비 인덱스'],['ja','基準からインデックス'],['zh-CN','基准至索引']]){
+    const metadata=fixture(undefined,locale).api.renderUnit(review.units[0]).children[0].children[1].textContent;
+    assert.equal(metadata,`${label} · M`);
+  }
 });
 
 test('viewer saves original feedback and keeps whitespace-only edits as unsaved before batch copying', async ()=>{
