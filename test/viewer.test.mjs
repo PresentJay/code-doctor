@@ -77,6 +77,30 @@ test('a viewer without host session returns a private per-viewer handoff key', a
   assert.equal(await service.submitted({session:'unrelated-viewer'}),null);
 });
 
+test('switching repositories preserves each open viewer and its original review', {timeout:30000}, async t=>{
+  const first=await fixture(t), second=await fixture(t);
+  await writeFile(path.join(first.root,'a.js'),'export const answer = 2;\n');
+  await writeFile(path.join(second.root,'a.js'),'export const answer = 3;\n');
+  const reviewA=await first.service.capture({task:'first task'}), reviewB=await second.service.capture({task:'second task'});
+  await first.service.feedback({reviewId:reviewA.id,blockId:reviewA.blocks[0].id,text:'first repository only'});
+  const client=new Client({name:'multiple-viewers-test',version:'1.0.0'});t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',first.root],stderr:'pipe'}));
+  const open=()=>client.callTool({name:'open_review',arguments:{session:'viewer-switch-test'}}).then(data);
+  const a=await open();
+  const read=async url=>{const u=new URL(url);return (await fetch(u.origin+'/api/review',{headers:{'X-Code-Doctor-Token':new URLSearchParams(u.hash.slice(1)).get('token')}})).json();};
+  assert.equal((await read(a.url)).review.id,reviewA.id);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:second.root}})).repo,second.service.root);
+  const b=await open(); assert.notEqual(new URL(a.url).origin,new URL(b.url).origin);
+  const stateA=await read(a.url), stateB=await read(b.url);
+  assert.equal(stateA.review.id,reviewA.id); assert.equal(stateB.review.id,reviewB.id);
+  assert.equal(stateA.feedbacks[0].text,'first repository only'); assert.equal(stateB.feedbacks.length,0);
+  const aToken=new URLSearchParams(new URL(a.url).hash.slice(1)).get('token');
+  assert.equal((await fetch(new URL(b.url).origin+'/api/review',{headers:{'X-Code-Doctor-Token':aToken}})).status,401);
+  assert.equal((await client.callTool({name:'wait_for_review',arguments:{waitId:a.waitId,reviewId:reviewA.id,timeoutMs:100}})).isError,true);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:first.root}})).repo,first.service.root);
+  assert.equal((await open()).url,a.url,'returning to the first repository reuses its existing viewer');
+});
+
 test('a real MCP request waits for one completion and preserves review identity', {timeout:60000}, async t=>{
   const {root,service} = await fixture(t);
   await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
@@ -111,8 +135,10 @@ test('a real MCP request waits for one completion and preserves review identity'
   assert.equal(completed.status,'completed'); assert.deepEqual(completed.items.map(item=>item.text),['first opinion','second opinion']);
   assert.equal((await get()).reviewFinished,true);
   assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:root}})).repo,service.root);
-  const other = (await fixture(t)).root;
-  assert.equal((await client.callTool({name:'select_repository',arguments:{repo:other}})).isError,true,'an open viewer cannot be retargeted');
+  const other = await fixture(t);
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:other.root}})).repo,other.service.root);
+  assert.equal((await get()).review.id,review.id,'the original viewer remains bound to its repository');
+  assert.equal(data(await client.callTool({name:'select_repository',arguments:{repo:root}})).repo,service.root);
   assert.notEqual((await finish(review.id,[])).status,200,'duplicate completion cannot replace a delivered batch');
   const secondOpen = await open();
   assert.equal(new URLSearchParams(new URL(secondOpen.url).hash.slice(1)).get('lang'),null);

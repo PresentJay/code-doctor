@@ -65,6 +65,8 @@ Navigation, code expansion and language selection do not call a model. With a co
 
 After a completed review, the viewer opens the revised review when the agent starts waiting for it. An unsaved draft keeps the previous review on screen. The viewer also keeps unsaved input while navigating and changing language in that page; it does not promise recovery after refresh or closing the tab. Server-side saved opinions remain versioned and retrievable. Browser input requests, where supported, do not prove successful chat delivery.
 
+An MCP connection can select another repository after its active tool call finishes. Each open viewer stays bound to its original repository and is reused when that repository is selected again. Viewers remain alive until the MCP connection closes; switching does not close a tab or move its drafts to another repository.
+
 Private storage is `.code-doctor/review.json`, `reviews/`, `history.json` and versioned feedback records. All must be ignored and untracked. Writes use a per-checkout lock. If a writer died, inspect `doctor` and verify no process owns the checkout before manually removing only its stale lock. Do not delete all reviews or remove a live writer's lock.
 
 ## Submitted feedback
