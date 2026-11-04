@@ -28,14 +28,14 @@ class Element {
   select() {}
 }
 const opinion = (id, blockId, extra = {}) => ({id, blockId, reviewId:'review-1', repoRoot:'/fixture', task:{text:'fixture'}, fingerprint:'sha', version:1, state:'pending', text:`원문 ${id}\n둘째 줄`, ...extra});
-function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false) {
+function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false, sessionStorage, token = '') {
   const review = {id:'review-1',fingerprint:'sha',summary:'Original agent summary',task:{text:'Original request',kind:'fix'},units:[],blocks:[{id:'a',title:'첫 변경',comment:'Original explanation',unitIds:[]},{id:'b',title:'둘째 변경',comment:'Second explanation',unitIds:[]}]};
   const initial = {review, sessionBound, reviewFinished:false, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
   const elements = new Map();
   const document = {hidden:false,documentElement:{lang:language},querySelectorAll(){return [];}, getElementById(id) { if (!elements.has(id)) elements.set(id,new Element()); return elements.get(id); }, createElement() { return new Element(); }, createTextNode(text) { return {textContent:text}; }};
   let next = structuredClone(initial);
   const requests = [];
-  const context = {document,focusExcerpts,patchLineCount,patchRows,createTranslator,resolveLocale,translateDocument,history:{replaceState(){}},window:{addEventListener() {}},location:{hash:'#lang='+language}, navigator:{clipboard:{writeText:clipboard}}, URLSearchParams,
+  const context = {document,focusExcerpts,patchLineCount,patchRows,createTranslator,resolveLocale,translateDocument,sessionStorage,history:{replaceState(){}},window:{addEventListener() {}},location:{hash:'#lang='+language+'&token='+token}, navigator:{clipboard:{writeText:clipboard}}, URLSearchParams,
     fetch:async (url, options) => {
       requests.push({url,method:options.method,...(options.body ? {body:JSON.parse(options.body)} : {})});
       if (url==='/api/feedback' && options.method==='POST') {
@@ -46,13 +46,40 @@ function fixture(clipboard = async () => { throw new Error('Clipboard unavailabl
       return {ok:true,json:async()=>structuredClone(next)};
     }, initial:structuredClone(initial)};
   vm.runInNewContext(`${source}\nstate=initial; latest=initial; document.getElementById('selected-block').hidden=false;
-    globalThis.testApi={copyAllFeedback,submitFeedback,poll,loadInitial,updateControls,changeLanguage,saveFeedback,renderUnit,identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
+    globalThis.testApi={copyAllFeedback,submitFeedback,poll,loadInitial,updateControls,changeLanguage,saveFeedback,renderUnit,preserveDraft,renderBlock,unsavedBlocks,setBlock:(value)=>{index=value;},identity:()=>JSON.stringify(state),copyOne:()=>copyFollowup([state.feedbacks[0]]),
       draft:(id,value)=>drafts.set('review-1:sha:'+id,value), saving:(value)=>{saving=value;},
       startOtherRequest:()=>{busy=true;}, isBusy:()=>busy, finished:(value)=>{finished=value;},
       simulateSaveResponse:()=>{state.feedbacks=state.feedbacks.map(item=>({...item,feedbackFile:'/fixture/'+item.id}));}, clearFeedback:()=>{state.feedbacks=[];},
       switchReview:()=>{state={...state,review:{...state.review,id:'review-other'}};}};`, context);
   return {api:context.testApi, el:id=>document.getElementById(id), requests, change(fn) { fn(next); }};
 }
+
+test('refresh restores and submits unsaved opinions without mixing review versions or viewers', async ()=>{
+  const values = new Map();
+  const storage = {getItem:key=>values.get(key) ?? null, setItem:(key,value)=>values.set(key,value)};
+  const before = fixture(undefined,'ko',true,storage,'one');
+  before.el('opinion').value='첫 의견'; before.api.preserveDraft();
+  before.api.setBlock(1); before.el('opinion').value='둘째 의견'; before.api.preserveDraft();
+  const after = fixture(undefined,'ko',true,storage,'one');
+  after.api.renderBlock();
+  assert.equal(after.el('opinion').value,'첫 의견');
+  assert.equal(after.api.unsavedBlocks().length,2);
+  after.api.setBlock(1); after.api.renderBlock();
+  assert.equal(after.el('opinion').value,'둘째 의견');
+  const otherViewer = fixture(undefined,'ko',true,storage,'two');
+  assert.equal(otherViewer.api.unsavedBlocks().length,0);
+  await after.api.submitFeedback();
+  assert.deepEqual(after.requests.filter(request=>request.url==='/api/feedback').map(request=>request.body.text),['첫 의견','둘째 의견']);
+  after.api.switchReview();
+  assert.equal(after.api.unsavedBlocks().length,0);
+});
+
+test('unavailable browser storage keeps editing usable in the current page', ()=>{
+  const storage = {getItem(){throw new Error('blocked');},setItem(){throw new Error('blocked');}};
+  const f=fixture(undefined,'ko',true,storage);
+  f.el('opinion').value='임시 의견'; f.api.preserveDraft(); f.api.renderBlock();
+  assert.equal(f.el('opinion').value,'임시 의견');
+});
 
 test('one submission saves drafts from both blocks and submits the exact pending set', async ()=>{
   const f=fixture(undefined,'ko',true);
