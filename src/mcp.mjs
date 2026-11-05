@@ -55,14 +55,17 @@ export async function startMcp(cwd) {
         references:z.array(z.object({title:z.string(),source:z.string(),revision:z.string().optional()}).strict()).max(100).optional()}).strict().optional(),
     }, call('capture'));
     tool('read_review', 'Read a saved review. Use view=guide to prepare all ordered comments, verified code excerpts and file/side/line targets in one call for the current conversation or available native diff tools; no browser is needed. Every unit remains in the inventory; blocks without focus keep full patches. Block coverage lists changed lines shown, exact unshown ranges and non-line units; it is not review completion or approval. view=outline omits patches and excerpts. Default full preserves the original review. Optional reviewId reads an archived revision. This supplies data, not a native UI or automatic delivery.', {reviewId:z.string().optional(),view:z.enum(['full','outline','guide']).default('full')}, call('read'), true);
-    tool('plan_review', 'Group and order existing change units with evidence-based comments. Every unit must occur exactly once; stale source is rejected. Planning can change the review ID: use the returned id for subsequent reads and feedback resolution.', {
+    tool('plan_review', 'Group and order existing change units with evidence-based comments. Every unit must occur exactly once; stale source is rejected. Planning can change the review ID: use the returned id for subsequent reads and feedback resolution. After reading captured patches, response=compact avoids returning them again; the complete review remains saved. Default full preserves the original response.', {
       reviewId:z.string(), summary:z.string().max(8000), blocks:z.array(z.object({
         id:z.string(), title:z.string().max(500), comment:z.string().max(8000),
         importance:z.enum(['high','normal','low']), unitIds:z.array(z.string()),
         relation:z.enum(['requested','supporting','extra','unknown']).optional(),
         focus:z.array(z.object({unitId:z.string(),side:z.enum(['old','new']),startLine:z.number().int().min(1),endLine:z.number().int().min(1)}).strict()).min(1).max(3).optional(),
-      })),
-    }, call('plan'));
+      })), response:z.enum(['full','compact']).default('full'),
+    }, async ({response,...input}) => {
+      const review = await (await service()).plan(input);
+      return response === 'compact' ? {...review,units:review.units.map(({patch,...unit})=>unit)} : review;
+    });
     tool('record_feedback', 'Save the human’s exact feedback for a block after checking current source. Records an opinion only; never approves, edits source, sends a message, or merges.', {
       reviewId:z.string(), blockId:z.string(), text:z.string().min(1).max(8000),
     }, call('feedback'));
