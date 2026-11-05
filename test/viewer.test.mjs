@@ -123,12 +123,14 @@ test('a real MCP request waits for one completion and preserves review identity'
   const get = ()=>fetch(url.origin+'/api/review',{headers:{'X-Code-Doctor-Token':token}}).then(r=>r.json());
   const finish = (reviewId,items)=>fetch(url.origin+'/api/finish',{method:'POST',headers:{'X-Code-Doctor-Token':token,'Content-Type':'application/json'},body:JSON.stringify({reviewId,items})});
   const wait = (opened,options={})=>client.callTool({name:'wait_for_review',arguments:{waitId:opened.waitId,reviewId:opened.reviewId,timeoutMs:20000}},options);
-  const pending = wait(firstOpen,{timeout:25000});
+  const pending = client.callTool({name:'wait_for_review',arguments:{waitId:firstOpen.waitId,reviewId:firstOpen.reviewId}},{timeout:25000});
   for (let i=0; i<100 && !(await get()).agentWaiting; i++) await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal((await get()).agentWaiting,true);
   assert.equal((await get()).reviewFinished,false);
   assert.equal((await client.callTool({name:'select_repository',arguments:{repo:root}})).isError,true,'a waiting review cannot change repository');
   assert.equal((await wait(firstOpen,{timeout:25000})).isError,true,'do not attach two waiting agents to one review');
+  await new Promise(resolve=>setTimeout(resolve,1200));
+  assert.equal((await get()).agentWaiting,true,'default wait must give a person more than one second');
   const response = await finish(review.id,[{id:first.id,version:1},{id:second.id,version:1}]);
   assert.equal(response.status,200); assert.equal((await response.json()).waiting,true);
   const completed = data(await pending);

@@ -93,7 +93,7 @@ export async function startMcp(cwd) {
       const url = lang ? `${opened.url}&lang=${encodeURIComponent(lang)}` : opened.url;
       return {url,repo:selected.root,waitId:opened.prepareWait(),reviewId:current?.id ?? null,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:'Wait for review completion; a timeout or cancellation is not a completed review.'};
     });
-    tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Call after showing the open_review URL. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
+    tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Call after showing the open_review URL. For an ordinary human review, omit timeoutMs to use the 10-minute default; do not use a short probe that ends before the person can respond. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
       waitId:z.string().regex(/^[a-f0-9]{48}$/),reviewId:z.string().regex(/^review-[a-f0-9]{24}$/),timeoutMs:z.number().int().min(100).max(900000).default(600000),
     }, async ({waitId,reviewId,timeoutMs},context) => {
       const viewer = viewers.get((await service()).root);
