@@ -20,7 +20,13 @@ window.addEventListener('hashchange', () => {
 });
 const annotation = document.oai?.annotation;
 const canAnnotate = typeof annotation?.request === 'function';
-const drafts = new Map();
+const draftStorageKey = `code-doctor:drafts:${token}`;
+let storedDrafts = [];
+try {
+  const value = JSON.parse(sessionStorage.getItem(draftStorageKey) ?? '[]');
+  if (Array.isArray(value)) storedDrafts = value.filter(entry => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string' && typeof entry[1] === 'string');
+} catch { /* Storage may be unavailable; keep drafts in this page. */ }
+const drafts = new Map(storedDrafts);
 let state = null;
 let latest = null;
 let index = 0;
@@ -425,7 +431,11 @@ function renderBlock(focus = false) {
 }
 
 function preserveDraft() {
-  if (block()) drafts.set(draftKey(), $('opinion').value);
+  if (!block()) return;
+  const key = draftKey(), value = $('opinion').value;
+  if (value) drafts.set(key, value); else drafts.delete(key);
+  try { sessionStorage.setItem(draftStorageKey, JSON.stringify([...drafts])); }
+  catch { /* Storage may be unavailable; keep drafts in this page. */ }
 }
 
 function selectBlock(position, focus = false) {
