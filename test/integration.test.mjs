@@ -190,6 +190,21 @@ test('outline CLI/MCP reads preserve every unit and original identity without pa
   assert.deepEqual(await service.read({reviewId:planned.id}),planned);
 });
 
+test('compact MCP planning preserves every unit and full saved code', {timeout:30000}, async t=>{
+  const root = await fixture(t);
+  await writeFile(path.join(root,'long.js'),'export const additional = true;\n'.repeat(120));
+  const service = await createService(root);
+  const captured = await service.capture({task:'Review all changes.'});
+  const client = new Client({name:'compact-plan-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const compact = data(await client.callTool({name:'plan_review',arguments:{reviewId:captured.id,summary:'Read the changes.',blocks:captured.blocks,response:'compact'}}));
+  const full = await service.read({reviewId:compact.id});
+  assert.deepEqual(compact,{...full,units:full.units.map(({patch,...unit})=>unit)});
+  assert.ok(Buffer.byteLength(JSON.stringify(compact))<Buffer.byteLength(JSON.stringify(full)));
+  assert.deepEqual(data(await client.callTool({name:'read_review',arguments:{reviewId:compact.id}})),full);
+});
+
 test('oversized MCP results keep saved source and the same connection usable for outline and focused code', {timeout:30000}, async t=>{
   const root = await fixture(t);
   const line = '// '+ 'x'.repeat(90)+'\n';
@@ -212,6 +227,9 @@ test('oversized MCP results keep saved source and the same connection usable for
   const blocks = saved.blocks.map(block=>block.unitIds.includes(large.id) ? {...block,focus:[{unitId:large.id,side:'new',startLine:1,endLine:2}]} : block);
   const planned = await client.callTool({name:'plan_review',arguments:{reviewId:saved.id,summary:'큰 파일은 실제 두 줄부터 읽습니다.',blocks}});
   assert.equal(planned.isError,true); const plannedId = JSON.parse(planned.content[0].text).reviewId;
+  const compact = data(await client.callTool({name:'plan_review',arguments:{reviewId:plannedId,summary:'큰 파일은 실제 두 줄부터 읽습니다.',blocks,response:'compact'}}));
+  assert.equal(compact.id,plannedId);
+  assert.deepEqual(compact.units,saved.units.map(({patch,...unit})=>unit));
   const blockId = blocks.find(block=>block.unitIds.includes(large.id)).id;
   const focused = data(await client.callTool({name:'read_block',arguments:{reviewId:plannedId,blockId}}));
   const guide = data(await client.callTool({name:'read_review',arguments:{view:'guide'}}));
