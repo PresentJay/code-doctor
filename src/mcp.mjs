@@ -55,7 +55,7 @@ export async function startMcp(cwd) {
         references:z.array(z.object({title:z.string(),source:z.string(),revision:z.string().optional()}).strict()).max(100).optional()}).strict().optional(),
     }, call('capture'));
     tool('read_review', 'Read a saved review. Use view=guide to prepare all ordered comments, verified code excerpts and file/side/line targets in one call for the current conversation or available native diff tools; no browser is needed. Every unit remains in the inventory; blocks without focus keep full patches. Block coverage lists changed lines shown, exact unshown ranges and non-line units; it is not review completion or approval. view=outline omits patches and excerpts. Default full preserves the original review. Optional reviewId reads an archived revision. This supplies data, not a native UI or automatic delivery.', {reviewId:z.string().optional(),view:z.enum(['full','outline','guide']).default('full')}, call('read'), true);
-    tool('plan_review', 'Group and order existing change units with evidence-based comments. Every unit must occur exactly once; stale source is rejected.', {
+    tool('plan_review', 'Group and order existing change units with evidence-based comments. Every unit must occur exactly once; stale source is rejected. Planning can change the review ID: use the returned id for subsequent reads and feedback resolution.', {
       reviewId:z.string(), summary:z.string().max(8000), blocks:z.array(z.object({
         id:z.string(), title:z.string().max(500), comment:z.string().max(8000),
         importance:z.enum(['high','normal','low']), unitIds:z.array(z.string()),
