@@ -22,10 +22,11 @@ const annotation = document.oai?.annotation;
 const canAnnotate = typeof annotation?.request === 'function';
 const draftStorageKey = `code-doctor:drafts:${token}`;
 let storedDrafts = [];
+let draftStorageUnavailable = false;
 try {
   const value = JSON.parse(sessionStorage.getItem(draftStorageKey) ?? '[]');
   if (Array.isArray(value)) storedDrafts = value.filter(entry => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string' && typeof entry[1] === 'string');
-} catch { /* Storage may be unavailable; keep drafts in this page. */ }
+} catch { draftStorageUnavailable = true; }
 const drafts = new Map(storedDrafts);
 let state = null;
 let latest = null;
@@ -131,7 +132,14 @@ function clearCopyFallback() {
   $('followup-text').value = '';
 }
 
+function renderDraftStorageWarning() {
+  const warning = $('draft-storage-warning');
+  text(warning, msg("Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review."));
+  warning.hidden = !draftStorageUnavailable;
+}
+
 function updateControls() {
+  renderDraftStorageWarning();
   const selected = block();
   const current = isCurrent();
   $('previous').disabled = !selected || index === 0 || busy || saving;
@@ -435,7 +443,8 @@ function preserveDraft() {
   const key = draftKey(), value = $('opinion').value;
   if (value) drafts.set(key, value); else drafts.delete(key);
   try { sessionStorage.setItem(draftStorageKey, JSON.stringify([...drafts])); }
-  catch { /* Storage may be unavailable; keep drafts in this page. */ }
+  catch { draftStorageUnavailable = true; }
+  renderDraftStorageWarning();
 }
 
 function selectBlock(position, focus = false) {

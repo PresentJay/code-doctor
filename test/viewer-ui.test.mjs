@@ -74,11 +74,46 @@ test('refresh restores and submits unsaved opinions without mixing review versio
   assert.equal(after.api.unsavedBlocks().length,0);
 });
 
-test('unavailable browser storage keeps editing usable in the current page', ()=>{
-  const storage = {getItem(){throw new Error('blocked');},setItem(){throw new Error('blocked');}};
+const storageWarning = 'Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.';
+for (const language of ['en','ko','ja','zh-CN']) {
+  for (const failure of ['read','write']) test(`${language}: blocked storage ${failure} warns without preventing editing or saving`, async ()=>{
+    const storage = {
+      getItem(){if (failure === 'read') throw new Error('blocked'); return null;},
+      setItem(){throw new Error('blocked');},
+    };
+    const f=fixture(undefined,language,true,storage);
+    f.api.renderBlock();
+    assert.equal(f.el('draft-storage-warning').hidden,failure !== 'read');
+    f.el('opinion').value='임시 의견'; f.api.preserveDraft();
+    f.api.setBlock(1); f.api.renderBlock();
+    f.api.setBlock(0); f.api.renderBlock();
+    assert.equal(f.el('opinion').value,'임시 의견');
+    assert.equal(f.el('draft-storage-warning').hidden,false);
+    const translated = createTranslator(language)(storageWarning);
+    assert.equal(f.el('draft-storage-warning').textContent,translated);
+    if (language !== 'en') assert.notEqual(translated,storageWarning);
+    assert.equal(f.el('action-status').textContent ?? '','');
+    await f.api.saveFeedback();
+    assert.equal(f.requests.filter(request=>request.url==='/api/feedback').length,1);
+    assert.equal(f.el('action-status').textContent,createTranslator(language)('Opinion saved. Keep reading and leave opinions on other blocks.'));
+    assert.equal(f.el('draft-storage-warning').hidden,false);
+    f.api.changeLanguage(language === 'ko' ? 'ja' : 'ko');
+    assert.equal(f.el('draft-storage-warning').textContent,createTranslator(language === 'ko' ? 'ja' : 'ko')(storageWarning));
+    const reloaded=fixture(undefined,language,true,storage);
+    reloaded.api.renderBlock();
+    assert.equal(reloaded.el('opinion').value,'');
+  });
+}
+
+test('working browser storage keeps the warning hidden after editing and reload', ()=>{
+  const values=new Map();
+  const storage={getItem:key=>values.get(key) ?? null,setItem:(key,value)=>values.set(key,value)};
   const f=fixture(undefined,'ko',true,storage);
-  f.el('opinion').value='임시 의견'; f.api.preserveDraft(); f.api.renderBlock();
-  assert.equal(f.el('opinion').value,'임시 의견');
+  f.el('opinion').value='유지할 초안'; f.api.preserveDraft(); f.api.renderBlock();
+  assert.equal(f.el('draft-storage-warning').hidden,true);
+  const reloaded=fixture(undefined,'ko',true,storage); reloaded.api.renderBlock();
+  assert.equal(reloaded.el('opinion').value,'유지할 초안');
+  assert.equal(reloaded.el('draft-storage-warning').hidden,true);
 });
 
 test('one submission saves drafts from both blocks and submits the exact pending set', async ()=>{

@@ -1,6 +1,7 @@
 // Interface copy only. Source code, agent explanations and opinions stay unchanged.
 export const messages = {
   "en": {
+    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.",
     "Pending changes": "Pending changes",
     "Addressed": "Addressed",
     "Not applied": "Not applied",
@@ -154,6 +155,7 @@ export const messages = {
     "Language": "Language"
   },
   "ko": {
+    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "브라우저의 임시 저장소를 사용할 수 없습니다. 현재 페이지에서는 계속 작성할 수 있지만, 새로고침하거나 페이지를 닫으면 저장하지 않은 의견이 사라질 수 있습니다. 이 안내는 로컬 검토에 의견이 저장되었는지를 나타내지 않습니다.",
     "Pending changes": "수정 대기",
     "Addressed": "반영됨",
     "Not applied": "반영 안 함",
@@ -307,6 +309,7 @@ export const messages = {
     "Language": "언어"
   },
   "ja": {
+    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "ブラウザーの一時保存領域を利用できません。このページでは入力を続けられますが、再読み込みしたりページを閉じたりすると、未保存の意見が失われることがあります。この案内は、ローカルレビューへの意見の保存結果を示すものではありません。",
     "Pending changes": "修正待ち",
     "Addressed": "反映済み",
     "Not applied": "未反映",
@@ -460,6 +463,7 @@ export const messages = {
     "Language": "言語"
   },
   "zh-CN": {
+    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "无法使用浏览器的临时存储。您可以在当前页面继续编写，但刷新或关闭页面后，未保存的意见可能会丢失。此提示不代表意见是否已保存到本地审阅中。",
     "Pending changes": "待修改",
     "Addressed": "已处理",
     "Not applied": "未采纳",

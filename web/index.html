@@ -69,13 +69,14 @@
 
           <div class="opinion">
             <label for="opinion" data-i18n="Instruction for this block">Instruction for this block</label>
-            <textarea data-shadcn="textarea" id="opinion" rows="3" maxlength="4000" placeholder="Example: return an error here and keep the existing response format." data-i18n-placeholder="Example: return an error here and keep the existing response format." aria-describedby="opinion-help"></textarea>
+            <textarea data-shadcn="textarea" id="opinion" rows="3" maxlength="4000" placeholder="Example: return an error here and keep the existing response format." data-i18n-placeholder="Example: return an error here and keep the existing response format." aria-describedby="opinion-help draft-storage-warning"></textarea>
             <div class="actions">
               <button id="save-feedback" type="button" data-shadcn="outline" data-i18n="Save opinion">Save opinion</button>
               <button id="copy-followup" type="button" disabled data-i18n="Copy this opinion">Copy this opinion</button>
               <button id="native-annotation" type="button" hidden data-i18n="Attach this block to the conversation">Attach this block to the conversation</button>
             </div>
             <p id="opinion-help" class="muted" data-i18n="Save opinions on several blocks, then submit them together below.">Save opinions on several blocks, then submit them together below.</p>
+            <p id="draft-storage-warning" class="notice" role="status" aria-live="polite" hidden></p>
             <p id="action-status" class="action-status" role="status" aria-live="polite"></p>
             <div id="feedback-section" class="feedback-section" hidden>
               <h3 data-i18n="Opinions on this block">Opinions on this block</h3>
