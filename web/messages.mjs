@@ -155,7 +155,7 @@ export const messages = {
     "Language": "Language"
   },
   "ko": {
-    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "브라우저의 임시 저장소를 사용할 수 없습니다. 현재 페이지에서는 계속 작성할 수 있지만, 새로고침하거나 페이지를 닫으면 저장하지 않은 의견이 사라질 수 있습니다. 이 안내는 로컬 검토에 의견이 저장되었는지를 나타내지 않습니다.",
+    "Browser draft storage is unavailable. You can keep writing on this page, but unsaved opinions may be lost if you reload or close it. This does not indicate whether an opinion was saved to the local review.": "브라우저의 임시 저장소를 사용할 수 없습니다. 현재 페이지에서는 계속 작성할 수 있지만, 새로고침하거나 페이지를 닫으면 저장하지 않은 의견이 사라질 수 있습니다. 의견 저장 여부는 별도 안내를 확인해 주세요.",
     "Pending changes": "수정 대기",
     "Addressed": "반영됨",
     "Not applied": "반영 안 함",
