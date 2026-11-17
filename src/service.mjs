@@ -50,7 +50,7 @@ export async function createService(cwd) {
     const tracked = execFileSync('git', ['-C', root, 'ls-files', '-z', '--', destination], {stdio:'pipe', env});
     if (tracked.length) throw new Error(`Review storage must not be tracked: ${destination}`);
     try { execFileSync('git', ['-C', root, 'check-ignore', '-q', '--', destination], {stdio:'pipe', env}); }
-    catch { throw new Error(`Add .code-doctor/ to .gitignore without exceptions before saving a review: ${destination}`); }
+    catch { throw new Error(`Keep .code-doctor/ untracked and ignored without exceptions before saving a review; prefer Git's local info/exclude: ${destination}`); }
     return current;
   }
   async function json(relative) {

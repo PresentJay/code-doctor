@@ -355,6 +355,7 @@ test('review, temporary and feedback destinations must each be ignored and untra
     await writeFile(path.join(root,'.gitignore'),`.code-doctor/*\n!.code-doctor/${exception}\n`);
     const result = run(root,'capture');
     assert.notEqual(result.status,0); assert.match(result.stderr,/without exceptions/);
+    assert.match(result.stderr,/local info\/exclude/); assert.doesNotMatch(result.stderr,/\.gitignore/);
     assert.deepEqual(await readdir(path.join(root,'.code-doctor')),[]);
   }
   const root = await fixture(t);
