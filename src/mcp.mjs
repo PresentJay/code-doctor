@@ -82,7 +82,7 @@ export async function startMcp(cwd) {
       feedbackId:z.string(), expectedVersion:z.number().int().min(1), reviewId:z.string(),
       resolution:z.enum(['addressed','dismissed']), note:z.string().min(1).max(8000),
     }, call('resolve'));
-    tool('open_review', 'Open the optional local review. Set lang to the person’s preferred language when known. Show its URL to the person, then call wait_for_review with its waitId and the current review ID. Do not publish the local access token or waitId.', {session:z.string().min(1).max(500).optional(),lang:z.enum(['en','ko','ja','zh-CN']).optional()}, async ({session,lang}) => {
+    tool('open_review', 'Open the optional local review. Set lang to the person’s preferred language when known. Show url and skipUrl to the person, then call wait_for_review with its waitId and the current review ID. Keep token-bearing links in this conversation; do not publish them or reveal the raw waitId.', {session:z.string().min(1).max(500).optional(),lang:z.enum(['en','ko','ja','zh-CN']).optional()}, async ({session,lang}) => {
       const selected = await service();
       let viewer = viewers.get(selected.root);
       if (viewer && viewer.session !== session) throw new Error('This viewer is already bound to a different host session.');
@@ -94,9 +94,11 @@ export async function startMcp(cwd) {
       const opened = await viewer.promise;
       const current = await selected.read().catch(error => { if (error.message.startsWith('No review yet.')) return null; throw error; });
       const url = lang ? `${opened.url}&lang=${encodeURIComponent(lang)}` : opened.url;
-      return {url,repo:selected.root,waitId:opened.prepareWait(),reviewId:current?.id ?? null,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:'Wait for review completion; a timeout or cancellation is not a completed review.'};
+      const waitId = opened.prepareWait();
+      const skipUrl = url.replace('/#','/skip.html#') + `&waitId=${waitId}`;
+      return {url,skipUrl,repo:selected.root,waitId,reviewId:current?.id ?? null,...(opened.handoffKey ? {handoffKey:opened.handoffKey} : {}),feedback:'Wait for review completion; a skip, timeout or cancellation is not a completed review.'};
     });
-    tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Call after showing the open_review URL. For an ordinary human review, omit timeoutMs to use the 10-minute default; do not use a short probe that ends before the person can respond. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
+    tool('wait_for_review', 'Wait while the person reviews code in the local viewer. Show the open_review URL and skipUrl first. For an ordinary human review, omit timeoutMs to use the 10-minute default. On completed, apply the returned exact feedback together, or do nothing when the list is empty. Skipped, changed, timeout, closed, and cancellation are not review completion or approval. Requires a host that permits a long MCP call; do not retry in a model loop after timeout.', {
       waitId:z.string().regex(/^[a-f0-9]{48}$/),reviewId:z.string().regex(/^review-[a-f0-9]{24}$/),timeoutMs:z.number().int().min(100).max(900000).default(600000),
     }, async ({waitId,reviewId,timeoutMs},context) => {
       const viewer = viewers.get((await service()).root);

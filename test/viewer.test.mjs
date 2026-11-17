@@ -192,6 +192,50 @@ test('a timed-out review wait can resume without inventing completion', {timeout
   assert.equal(resumed.status,'completed'); assert.deepEqual(resumed.items,[]);
 });
 
+test('a skip link releases only its own waiter without submitting or approving a review', {timeout:15000}, async t=>{
+  const {root,service} = await fixture(t);
+  await writeFile(path.join(root,'a.js'),'export const answer = 2;\n');
+  const review = await service.capture({task:'fixture'});
+  const client = new Client({name:'skip-review-test',version:'1.0.0'});
+  t.after(()=>client.close());
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[entry,'mcp','--repo',root],stderr:'pipe'}));
+  const open=()=>client.callTool({name:'open_review',arguments:{session:'skip-session',lang:'ko'}}).then(data);
+  const wait=o=>client.callTool({name:'wait_for_review',arguments:{waitId:o.waitId,reviewId:o.reviewId,timeoutMs:5000}},{timeout:10000}).then(data);
+  const first=await open(), url=new URL(first.skipUrl), params=new URLSearchParams(url.hash.slice(1));
+  assert.equal(url.pathname,'/skip.html'); assert.equal(params.get('lang'),'ko'); assert.equal(params.get('waitId'),first.waitId);
+  const headers={'Content-Type':'application/json','X-Code-Doctor-Token':params.get('token')};
+  const skip=(id,extra={})=>fetch(url.origin+'/api/skip',{method:'POST',headers:{...headers,...extra},body:JSON.stringify({waitId:id})});
+  assert.equal((await fetch(url.origin+'/skip.html')).status,200);
+  assert.equal((await skip(first.waitId,{'X-Code-Doctor-Token':'invalid'})).status,401);
+  assert.equal((await skip(first.waitId,{Origin:'https://example.invalid'})).status,403);
+  const pending=wait(first);
+  assert.equal((await skip(first.waitId)).status,200);
+  assert.equal((await pending).status,'skipped');
+  assert.equal(await service.submitted({session:'skip-session'}),null);
+  assert.equal((await (await fetch(url.origin+'/api/review',{headers})).json()).reviewFinished,false);
+  const next=await open(); assert.notEqual(next.waitId,first.waitId);
+  const waiting=wait(next);
+  assert.equal((await skip(first.waitId)).status,409,'an old link must not end a later wait');
+  assert.equal((await skip(next.waitId)).status,200);
+  assert.equal((await waiting).status,'skipped');
+  const early=await open();
+  assert.equal((await skip(early.waitId)).status,200,'skip may arrive before the waiter starts');
+  assert.equal((await wait(early)).status,'skipped');
+  const expired=await open();
+  assert.equal(data(await client.callTool({name:'wait_for_review',arguments:{waitId:expired.waitId,reviewId:review.id,timeoutMs:100}},{timeout:5000})).status,'timeout');
+  assert.equal((await skip(expired.waitId)).status,409,'a timed-out link must not end a future wait');
+  const renewed=await open(); assert.notEqual(renewed.waitId,expired.waitId);
+  const final=wait(renewed);
+  assert.equal((await skip(expired.waitId)).status,409);
+  assert.equal((await skip(renewed.waitId)).status,200);
+  assert.equal((await final).status,'skipped');
+  const opened=await open(), alreadyOpen=wait(opened);
+  assert.equal((await fetch(url.origin+'/api/review',{headers})).status,200);
+  assert.equal((await skip(opened.waitId)).status,409,'an open review may contain unsaved drafts');
+  assert.equal((await fetch(url.origin+'/api/finish',{method:'POST',headers,body:JSON.stringify({reviewId:review.id,items:[]})})).status,200);
+  assert.equal((await alreadyOpen).status,'completed');
+});
+
 test('loopback viewer withholds private code from unauthenticated/cross-origin and arbitrary path requests', async t=>{
   const {root,service,url,headers,get,post} = await fixture(t);
   await writeFile(path.join(root,'a.js'),'export const privateMarker = 2;\n');
