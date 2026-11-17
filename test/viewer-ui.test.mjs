@@ -28,7 +28,7 @@ class Element {
   select() {}
 }
 const opinion = (id, blockId, extra = {}) => ({id, blockId, reviewId:'review-1', repoRoot:'/fixture', task:{text:'fixture'}, fingerprint:'sha', version:1, state:'pending', text:`원문 ${id}\n둘째 줄`, ...extra});
-function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false, sessionStorage, token = '') {
+function fixture(clipboard = async () => { throw new Error('Clipboard unavailable'); },language = 'ko',sessionBound = false, sessionStorage, token = '', finish = async () => ({ok:true,json:async()=>({waiting:true})})) {
   const review = {id:'review-1',fingerprint:'sha',summary:'Original agent summary',task:{text:'Original request',kind:'fix'},units:[],blocks:[{id:'a',title:'첫 변경',comment:'Original explanation',unitIds:[]},{id:'b',title:'둘째 변경',comment:'Second explanation',unitIds:[]}]};
   const initial = {review, sessionBound, reviewFinished:false, latestReviewId:review.id, freshness:{state:'current'}, history:[], feedbacks:[opinion('one','a'), opinion('two','b'), opinion('old','a',{reviewId:'review-old'}), opinion('done','b',{state:'addressed',version:2})]};
   const elements = new Map();
@@ -42,7 +42,7 @@ function fixture(clipboard = async () => { throw new Error('Clipboard unavailabl
         const saved = opinion(`new-${requests.length}`,'a',JSON.parse(options.body)); next.feedbacks.push(saved);
         return {ok:true,json:async()=>structuredClone(saved)};
       }
-      if (url==='/api/finish') { next.reviewFinished=true; return {ok:true,json:async()=>({waiting:true})}; }
+      if (url==='/api/finish') { const response=await finish(); if(response.ok) next.reviewFinished=true; return response; }
       return {ok:true,json:async()=>structuredClone(next)};
     }, initial:structuredClone(initial)};
   vm.runInNewContext(`${source}\nstate=initial; latest=initial; document.getElementById('selected-block').hidden=false;
@@ -128,6 +128,38 @@ test('one submission saves drafts from both blocks and submits the exact pending
   assert.deepEqual(sent.body.items.map(item=>item.id),['one','two','new-1','new-2']);
   assert.match(f.el('batch-status').textContent,/검토를 마쳤습니다/);
   assert.equal(f.el('submit-feedback').disabled,true);
+});
+
+test('finishing clears submitted drafts across blocks and keeps their saved opinions', async ()=>{
+  const values=new Map();
+  const storage={getItem:key=>values.get(key) ?? null,setItem:(key,value)=>values.set(key,value)};
+  const f=fixture(undefined,'ko',true,storage,'finish');
+  f.el('opinion').value='첫 의견'; f.api.preserveDraft();
+  f.api.setBlock(1); f.el('opinion').value='둘째 의견'; f.api.preserveDraft();
+  await f.api.submitFeedback();
+  assert.equal(f.el('opinion').value,'');
+  const reloaded=fixture(undefined,'ko',true,storage,'finish');
+  reloaded.api.renderBlock(); assert.equal(reloaded.el('opinion').value,'');
+  reloaded.api.setBlock(1); reloaded.api.renderBlock(); assert.equal(reloaded.el('opinion').value,'');
+  assert.deepEqual(f.requests.filter(request=>request.url==='/api/feedback').map(request=>request.body.text),['첫 의견','둘째 의견']);
+});
+
+test('a failed finish or a newer edit does not erase a draft', async ()=>{
+  const failed=fixture(undefined,'ko',true,undefined,'',async()=>({ok:false,status:500,json:async()=>({error:'failed'})}));
+  failed.el('opinion').value='전송할 의견'; failed.api.preserveDraft();
+  await failed.api.submitFeedback();
+  assert.equal(failed.el('opinion').value,'전송할 의견');
+  failed.api.renderBlock(); assert.equal(failed.el('opinion').value,'전송할 의견');
+
+  let f;
+  f=fixture(undefined,'ko',true,undefined,'',async()=>{
+    f.el('opinion').value='전송 중 새로 작성한 의견'; f.api.preserveDraft();
+    return {ok:true,json:async()=>({waiting:true})};
+  });
+  f.el('opinion').value='첫 의견'; f.api.preserveDraft();
+  await f.api.submitFeedback();
+  assert.equal(f.el('opinion').value,'전송 중 새로 작성한 의견');
+  f.api.renderBlock(); assert.equal(f.el('opinion').value,'전송 중 새로 작성한 의견');
 });
 
 test('review can finish without comments and does not create an instruction', async ()=>{
