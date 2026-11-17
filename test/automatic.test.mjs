@@ -12,7 +12,7 @@ async function fixture(t) {
  const home=path.join(dir,'home'),repo=path.join(dir,'project'),other=path.join(dir,'other');
  for(const file of [home,repo,other])await mkdir(file);
  for(const file of [repo,other])execFileSync('git',['init','-q',file]);
- const env={...process.env,HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
+ const env={...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'.config'),CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
  const cli=(...args)=>JSON.parse(execFileSync(process.execPath,[entry,...args],{env,encoding:'utf8',stdio:'pipe'}));
  const hook=(cwd=repo,session='session-a',extra={})=>execFileSync(process.execPath,[entry,'hook'],{env,encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd,session_id:session,prompt:'Fix the total calculation',...extra}),stdio:'pipe'});
  return {dir,home,repo,other,env,cli,hook};
@@ -28,7 +28,7 @@ test('one installation preserves settings and its actual commands guide ordinary
   assert.equal(config.custom,'preserve');assert.deepEqual(config.hooks.Stop,[unrelated]);assert.deepEqual(config.hooks.UserPromptSubmit[0],unrelated);assert.equal(config.hooks.UserPromptSubmit.length,2);
   assert.equal((await stat(full)).mode & 0o777,0o640);
   const output=execFileSync('/bin/sh',['-c',config.hooks.UserPromptSubmit[1].hooks[0].command],{env:f.env,encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd:f.repo,session_id:'abc',prompt:'Fix the total calculation'})});
-  const context=JSON.parse(output).hookSpecificOutput;assert.equal(context.hookEventName,'UserPromptSubmit');assert.match(context.additionalContext,/automatically/);assert.ok(context.additionalContext.includes(f.repo));
+  const context=JSON.parse(output).hookSpecificOutput;assert.equal(context.hookEventName,'UserPromptSubmit');assert.match(context.additionalContext,/automatically/);assert.ok(context.additionalContext.includes(f.repo));assert.match(context.additionalContext,/otherwise offer the local viewer/);
   f.cli('install');assert.equal(await readFile(full,'utf8'),text);
  }
  for(const host of ['.agents','.claude'])assert.match(await readFile(path.join(f.home,host,'skills/code-doctor/SKILL.md'),'utf8'),/Do not resolve a sibling launcher/);
@@ -47,6 +47,47 @@ test('Codex user installation adds an idempotent MCP entry without overwriting o
  const hooks=await readFile(path.join(f.home,'.codex/hooks.json'),'utf8');
  assert.throws(()=>f.cli('install','--host','codex'),/differs or was edited/);
  assert.equal(await readFile(path.join(f.home,'.codex/hooks.json'),'utf8'),hooks);
+});
+test('explicit Git ignore setup preserves user entries and enables capture in new repositories',async t=>{
+ const f=await fixture(t), ignore=path.join(f.env.XDG_CONFIG_HOME,'git','ignore');
+ await mkdir(path.dirname(ignore),{recursive:true}); await writeFile(ignore,'existing-rule');
+ const git=(root,...args)=>execFileSync('git',['-C',root,...args],{env:f.env,stdio:'pipe'});
+ for(const root of [f.repo,f.other]){
+  git(root,'config','user.name','Test');git(root,'config','user.email','test@example.invalid');
+  await writeFile(path.join(root,'file.js'),'export const value = 1;\n');
+  git(root,'add','file.js');git(root,'commit','-qm','base');
+  await writeFile(path.join(root,'file.js'),'export const value = 2;\n');
+ }
+ assert.throws(()=>git(f.repo,'check-ignore','-q','.code-doctor/review.json'));
+ f.cli('install','--host','codex','--with-git-ignore');
+ assert.equal(await readFile(ignore,'utf8'),'existing-rule\n/.code-doctor/\n');
+ for(const root of [f.repo,f.other]){
+  git(root,'check-ignore','-q','.code-doctor/review.json');
+  assert.deepEqual(f.cli('capture','--repo',root,'--task','fixture').units.map(unit=>unit.file),['file.js']);
+  await assert.rejects(readFile(path.join(root,'.gitignore')),/ENOENT/);
+ }
+ f.cli('install','--host','codex','--with-git-ignore');
+ assert.equal(await readFile(ignore,'utf8'),'existing-rule\n/.code-doctor/\n');
+});
+test('explicit Git ignore setup respects an existing configured path and rejects overlaps',async t=>{
+ const f=await fixture(t), ignore=path.join(f.home,'custom ignore');
+ const git=(...args)=>execFileSync('git',args,{env:f.env,stdio:'pipe'});
+ git('config','--global','core.excludesFile',ignore);
+ await writeFile(ignore,'keep\n');
+ f.cli('install','--host','codex','--with-git-ignore');
+ assert.equal(await readFile(ignore,'utf8'),'keep\n/.code-doctor/\n');
+ const config=path.join(f.env.CODEX_HOME,'config.toml');
+ git('config','--global','core.excludesFile',config);
+ const before=await readFile(config,'utf8');
+ assert.throws(()=>f.cli('install','--host','codex','--with-git-ignore'),/overlaps/);
+ assert.equal(await readFile(config,'utf8'),before);
+});
+test('explicit Git ignore setup refuses a symlink without changing installation files',async t=>{
+ const f=await fixture(t), ignore=path.join(f.env.XDG_CONFIG_HOME,'git','ignore'), target=path.join(f.home,'other-ignore');
+ await mkdir(path.dirname(ignore),{recursive:true});await writeFile(target,'preserve\n');await symlink(target,ignore);
+ assert.throws(()=>f.cli('install','--host','codex','--with-git-ignore'),/symlink/);
+ assert.equal(await readFile(target,'utf8'),'preserve\n');
+ await assert.rejects(readFile(path.join(f.env.CODEX_HOME,'hooks.json')),/ENOENT/);
 });
 test('Claude user installation preserves other servers and rejects an edited entry',async t=>{
  const f=await fixture(t); await mkdir(f.env.CLAUDE_CONFIG_DIR);
@@ -84,6 +125,32 @@ test('repository, session and global controls persist and installation never res
  f.cli('enable','--repo',f.repo);assert.equal(f.cli('status','--repo',f.repo).disabledBy,'global');
  f.cli('enable','--scope','global');assert.ok(f.hook());
  assert.throws(()=>f.cli('disable','--repo',f.repo,'--scope','session'),/Session scope requires/);
+});
+test('remote execution hints do not offer an unverified loopback viewer',async t=>{
+ const f=await fixture(t);
+ f.cli('enable','--scope','viewer');
+ f.env.SSH_CONNECTION='192.0.2.1 1234 192.0.2.2 22';
+ const context=JSON.parse(f.hook()).hookSpecificOutput.additionalContext;
+ assert.match(context,/indicates a remote host/);
+ assert.match(context,/Do not automatically open or wait for a loopback viewer/);
+ assert.doesNotMatch(context,/192\.0\.2\./,'connection addresses stay out of agent guidance');
+});
+test('local viewer access is opt-in, preserved on install, and can be disabled alone',async t=>{
+ const f=await fixture(t);
+ assert.equal(f.cli('status','--repo',f.repo).localViewer,false);
+ assert.match(f.hook(),/reachability has not been confirmed/);
+ f.cli('install','--host','codex','--local-viewer');
+ assert.equal(f.cli('status','--repo',f.repo).localViewer,true);
+ const settings=JSON.parse(await readFile(path.join(f.home,'.config/code-doctor/settings.json'),'utf8'));
+ assert.deepEqual(Object.keys(settings).sort(),['enabled','managed','repositories','sessions','version']);
+ assert.match(f.hook(),/person confirmed this installation’s local viewer/);
+ f.cli('disable','--scope','viewer');
+ assert.equal(f.cli('status','--repo',f.repo).localViewer,false);
+ assert.equal(f.cli('status','--repo',f.repo).enabled,true);
+ f.cli('install','--host','codex');
+ assert.equal(f.cli('status','--repo',f.repo).localViewer,false);
+ f.cli('enable','--scope','viewer');
+ assert.equal(f.cli('status','--repo',f.repo).localViewer,true);
 });
 test('malformed and edited settings fail before any host file is changed',async t=>{
  const f=await fixture(t);await mkdir(path.join(f.home,'.claude'));await writeFile(path.join(f.home,'.claude/settings.json'),'{"n":9007199254740993}');

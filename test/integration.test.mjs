@@ -15,6 +15,7 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(),'code-doctor-integration-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
   git(root,'init','-q'); git(root,'config','user.email','test@example.invalid'); git(root,'config','user.name','Test');
+  git(root,'config','core.excludesFile',devNull);
   await writeFile(path.join(root,'.gitignore'),'.code-doctor/\n');
   await writeFile(path.join(root,'a.js'),'export const answer = 1;\n');
   git(root,'add','.'); git(root,'commit','-qm','fixture');

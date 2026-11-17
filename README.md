@@ -12,16 +12,18 @@ This is an early preview. It uses local Git and the agent you already run; it do
 
 Requires Node.js 22 or newer and Git. On macOS/Linux, install once for your user:
 
+The optional `--with-git-ignore` adds `/.code-doctor/` to your user Git exclude file. It hides untracked top-level `.code-doctor` directories across your repositories; tracked files are unaffected. Omit the flag if you prefer to manage excludes yourself. Existing ignore entries are preserved; repository-specific overrides may require their own configuration. Use `--local-viewer` only if your browser runs on this same computer and can reach its local viewer. Without that confirmation, Code Doctor uses the conversation fallback. SSH, Codespaces and remote-container environment signals take precedence, but not every remote wrapper exposes a signal; disable the local viewer if access is uncertain.
+
 ```sh
 git clone https://github.com/PresentJay/code-doctor.git
 cd code-doctor
 npm ci --ignore-scripts --no-fund
-node bin/code-doctor.mjs install --host both
+node bin/code-doctor.mjs install --host both --with-git-ignore --local-viewer
 ```
 
 Use `--host codex` or `--host claude` for one agent. The installer adds a `UserPromptSubmit` hook, a discoverable skill and a user-level MCP entry to each selected host, preserving unrelated configuration. Keep the checkout and dependencies in place. Re-running installation updates managed entries without duplicating hooks or resetting opt-outs; edited entries and existing unowned skills require a manual merge.
 
-Open a new session. **Codex requires one initial hook review/trust through `/hooks`.** Installation cannot grant that trust. Claude may require a restart to load changed settings. After activation, ordinary development prompts in Git repositories receive guidance automatically; you do not have to name Code Doctor or configure each repository. When a conversation starts outside Git, the hook supplies discovery instructions; the agent checks the actual task repository and session preferences before applying guidance. Unrelated questions stay quiet. No background model process or browser is started.
+Open a new session. **Codex requires one initial hook review/trust through `/hooks`.** Installation cannot grant that trust. Claude may require a restart to load changed settings. After activation, ordinary development prompts in Git repositories receive guidance automatically; you do not have to name Code Doctor or configure each repository. When a conversation starts outside Git, the hook supplies discovery instructions; the agent checks the actual task repository and session preferences before applying guidance. Unrelated questions stay quiet. No background model process is started.
 
 The hook treats the host's working directory as a starting hint, not the task repository. The agent confirms the task's target before editing, reads relevant request/roadmap context, and prepares the reading guide when work finishes. Before responding, the agent checks that the complete guide is included in the same response. This is an agent instruction, not proof of delivery or a Stop hook that starts another model turn. Review storage is locally excluded from Git; installation adds no project files. See [Codex hooks](https://learn.chatgpt.com/docs/hooks) and [Claude hooks](https://code.claude.com/docs/en/hooks).
 
@@ -41,6 +43,8 @@ node bin/code-doctor.mjs status --repo "$PROJECT"
 ```
 
 Session controls add `--scope session --session ID` using the actual session ID supplied by the hook. Repository/session opt-outs retain only control context so the agent can re-enable the exact scope on request and check a different task repository independently; they do not start a reading guide for the disabled target. Global disable suppresses all hook context. Broader opt-outs take precedence: enabling one repository does not override a global disable. Preferences live in `~/.config/code-doctor/settings.json`, outside project source. To remove the installation entirely, remove its hook entry and user skill from each host before removing the checkout; preserve other hooks.
+
+To turn off only the automatic local viewer, use `node bin/code-doctor.mjs disable --scope viewer`. Re-enable it with `enable --scope viewer` only when your browser can reach the viewer on this computer. This does not enable a globally disabled Code Doctor or make a remote loopback link reachable.
 
 ### Optional project MCP connection
 
@@ -67,11 +71,11 @@ Ask for your development work normally, for example:
 
 Once the installed hook is active, the agent applies Code Doctor without a separate invocation. On first use in the conversation it briefly explains that guidance is active and can be turned off.
 
-The agent checks the request, repository instructions and relevant task/roadmap sources; captures all changes; then groups and orders them around behavior or decisions. It prepares the overall comment, code excerpts and complete inventory once. With a supported native host surface it attaches the guidance there. Otherwise it shows all blocks together in the conversation. It does not require a browser or ask you to say “next” for every block.
+The agent checks the request, repository instructions and relevant task/roadmap sources; captures all changes; then groups and orders them around behavior or decisions. It prepares the overall comment, code excerpts and complete inventory once. It prefers a native surface that can deliver your feedback to the same conversation. Otherwise, when your browser can reach the local viewer and the connected agent can wait, it offers review and skip links automatically. A remote loopback address requires a confirmed port forward. Navigation does not require another model turn.
 
 Leave native line comments and send them together, or name the blocks in one instruction. The agent records your original feedback against the exact review and code version, applies compatible corrections together, tests them, and prepares a revised review. Saving or viewing is never permission to merge or deploy.
 
-Ask for the **web viewer** explicitly if you prefer it. It provides English, Korean, Japanese and Simplified Chinese interface copy. The language control changes labels in place; code, agent text, review identity and drafts stay unchanged. Choose the language of agent explanations in your conversation. Server diagnostics and protocol field names remain English.
+The local viewer provides English, Korean, Japanese and Simplified Chinese interface copy. Before opening the viewer, select the separate skip link to immediately continue without reviewing. Skipping opens a small local confirmation page and is not approval. Once the viewer is open, finish there with or without opinions so drafts are not lost. If you leave both links alone, the default wait can last up to 10 minutes and a timeout does not mean approval. The language control changes labels in place; code, agent text, review identity and drafts stay unchanged. Choose the language of agent explanations in your conversation. Server diagnostics and protocol field names remain English.
 
 ## CLI and MCP
 
@@ -87,7 +91,7 @@ All CLI results are JSON, with errors on stderr. These commands are for agents a
 | `block` | `read_block` | Read one block; `--view full` retrieves all of its patches |
 | `feedback` / `feedbacks` | `record_feedback` / `list_feedback` | Record and retrieve exact, versioned opinions |
 | `resolve` | `resolve_feedback` | Record the evidence for handling an opinion |
-| `serve` | `open_review` | Open a requested local code review |
+| `serve` | `open_review` | Open a local code review |
 | — | `wait_for_review` | Wait once for the person to finish and return their exact feedback |
 | `submitted` | `read_submitted_feedback` | Read a submitted batch for the originating host session or private handoff key |
 

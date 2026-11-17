@@ -21,10 +21,12 @@ const help = `Code Doctor 0.1.0-rc.2 (Node >=22, Git required)
   mcp      --repo PATH                   (stdio; no model API key)
   serve    --repo PATH [--port 0 --session ID] (optional web review; keep running)
   submitted --repo PATH --session ID     (read explicitly submitted feedback for this session)
-  install  [--host both|codex|claude]   (one-time user hooks + skill; automatic guidance)
+  install  [--host both|codex|claude] [--with-git-ignore] [--local-viewer]
+           --with-git-ignore adds /.code-doctor/ to your user Git exclude file.
+           --local-viewer confirms this computer's viewer is reachable by your browser.
   status   --repo PATH [--session ID]
-  disable  --repo PATH [--scope repo|session|global --session ID]
-  enable   --repo PATH [--scope repo|session|global --session ID]
+  disable  --repo PATH [--scope repo|session|global|viewer --session ID]
+  enable   --repo PATH [--scope repo|session|global|viewer --session ID]
   hook                                  (host stdin event; advisory context only)
   setup    --repo PATH --host both
   doctor   --repo PATH
@@ -38,7 +40,7 @@ try {
     file:{type:'string'},review:{type:'string'},block:{type:'string'},text:{type:'string'},
     host:{type:'string',default:'both'},scope:{type:'string',default:'repo'},session:{type:'string'},
     feedback:{type:'string'},version:{type:'string'},resolution:{type:'string'},note:{type:'string'},state:{type:'string',default:'pending'},
-    view:{type:'string'},port:{type:'string',default:'0'},help:{type:'boolean',short:'h'},
+    view:{type:'string'},port:{type:'string',default:'0'},help:{type:'boolean',short:'h'},'with-git-ignore':{type:'boolean',default:false},'local-viewer':{type:'boolean',default:false},
   }});
   const command = positionals[0];
   if (values.help || !command) { process.stdout.write(help); }
@@ -48,7 +50,7 @@ try {
     let result;
     if (['install','status','enable','disable','hook'].includes(command)) {
       const auto = await import('../src/automatic.mjs');
-      if (command === 'install') result = await auto.installAutomatic({host:values.host});
+      if (command === 'install') result = await auto.installAutomatic({host:values.host,withGitIgnore:values['with-git-ignore'],localViewer:values['local-viewer']});
       else if (command === 'hook') await auto.runAutomaticHook();
       else if (command === 'status') result = await auto.automaticStatus({repo:cwd,session:values.session});
       else result = await auto.setAutomatic({repo:cwd,session:values.session,scope:values.scope,enabled:command === 'enable'});

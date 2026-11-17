@@ -15,6 +15,8 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const encode = value => JSON.stringify(value, null, 2) + '\n';
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const command = (...args) => [process.execPath, entry, ...args].map(quote).join(' ');
+// Keep this machine-level preference readable by older installations sharing the settings file.
+const localViewerKey = hash('code-doctor:local-viewer');
 
 function settings(text) {
   if (text === undefined) return {version:1, enabled:true, repositories:{}, sessions:{}, managed:{}};
@@ -39,7 +41,7 @@ async function rootOf(repo) {
 function state(value, repo, session) {
   const disabledBy = !value.enabled ? 'global' : value.repositories[hash(repo)] === false ? 'repo' :
     session && value.sessions[hash(JSON.stringify([repo,session]))] === false ? 'session' : null;
-  return {enabled:disabledBy === null, disabledBy, repo, session:session ?? null, settingsFile:settingsFile()};
+  return {enabled:disabledBy === null, disabledBy, localViewer:value.sessions[localViewerKey] === true, repo, session:session ?? null, settingsFile:settingsFile()};
 }
 async function update(files, build) {
   const root = path.parse(settingsFile()).root;
@@ -52,28 +54,44 @@ export async function automaticStatus({repo, session}) {
   return state(await loadSettings(), await rootOf(repo), session);
 }
 export async function setAutomatic({repo, session, scope = 'repo', enabled}) {
-  if (!['repo','session','global'].includes(scope)) throw new Error('scope must be repo, session, or global');
+  if (!['repo','session','global','viewer'].includes(scope)) throw new Error('scope must be repo, session, global, or viewer');
   if (scope === 'session' && !session) throw new Error('Session scope requires --session from the current hook context.');
-  const root = scope === 'global' ? null : await rootOf(repo);
+  const root = ['global','viewer'].includes(scope) ? null : await rootOf(repo);
   await update([settingsFile()], read => {
     const value = settings(read(settingsFile()));
     if (scope === 'global') value.enabled = enabled;
+    else if (scope === 'viewer') value.sessions[localViewerKey] = enabled;
     else if (scope === 'repo') value.repositories[hash(root)] = enabled;
     else value.sessions[hash(JSON.stringify([root,session]))] = enabled;
     return new Map([[settingsFile(),encode(value)]]);
   });
-  return scope === 'global' ? {scope,enabled,settingsFile:settingsFile()} : {scope,...await automaticStatus({repo:root,session})};
+  return ['global','viewer'].includes(scope) ? {scope,enabled,settingsFile:settingsFile()} : {scope,...await automaticStatus({repo:root,session})};
 }
 
-export async function installAutomatic({host = 'both'}) {
+export async function installAutomatic({host = 'both', withGitIgnore = false, localViewer = false}) {
   if (process.platform === 'win32') throw new Error('Automatic hook installation currently supports macOS/Linux. Windows shell quoting is not yet verified.');
   if (!['both','codex','claude'].includes(host)) throw new Error('host must be both, claude, or codex');
   const hosts = host === 'both' ? ['codex','claude'] : [host];
   const configs = hosts.map(name => name === 'codex' ? path.join(process.env.CODEX_HOME || path.join(homedir(),'.codex'),'hooks.json') : path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(),'.claude'),'settings.json'));
   const codexMcp = hosts.includes('codex') ? path.join(process.env.CODEX_HOME || path.join(homedir(),'.codex'),'config.toml') : undefined;
   const claudeMcp = hosts.includes('claude') ? (process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR,'.claude.json') : path.join(homedir(),'.claude.json')) : undefined;
+  let gitIgnore;
+  if (withGitIgnore) {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const configured = scope => {
+      try { return execFileSync('git',['config',scope,'--includes','--path','--get','core.excludesFile'],{cwd:homedir(),encoding:'utf8',stdio:'pipe',env}).replace(/\n$/,''); }
+      catch (error) { if (error.status === 1) return ''; throw error; }
+    };
+    gitIgnore = configured('--global');
+    if (!gitIgnore && configured('--system')) throw new Error('A system Git excludes file is configured. Add /.code-doctor/ to a user-level excludes file yourself.');
+    const xdg = process.env.XDG_CONFIG_HOME || path.join(homedir(),'.config');
+    if (!gitIgnore) gitIgnore = path.join(xdg,'git','ignore');
+    if (!path.isAbsolute(gitIgnore)) throw new Error('The Git excludes file must be an absolute path. Configure it explicitly before installation.');
+    gitIgnore = path.normalize(gitIgnore);
+  }
   if (configs.some(file => !path.isAbsolute(file))) throw new Error('Host configuration directories must be absolute.');
   const candidates = hosts.map(name => path.join(name === 'codex' ? path.join(homedir(),'.agents') : process.env.CLAUDE_CONFIG_DIR || path.join(homedir(),'.claude'), 'skills/code-doctor/SKILL.md'));
+  if (gitIgnore && [...configs,...candidates,codexMcp,claudeMcp,settingsFile()].includes(gitIgnore)) throw new Error('The Git excludes file overlaps a Code Doctor installation target.');
   const skills = [];
   for (const file of candidates) {
     try {
@@ -84,8 +102,9 @@ export async function installAutomatic({host = 'both'}) {
   const canonical = await readFile(skill,'utf8');
   const installed = canonical.replace('# Code Doctor\n', '# Code Doctor\n\nThis user installation uses '+command()+' with an explicit --repo. Read '+JSON.stringify(skill)+' for the full source skill. Do not resolve a sibling launcher from this copied skill.\n');
   const group = {hooks:[{type:'command',command:command('hook'),timeout:3}]};
-  await update([...configs,...skills,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : []),settingsFile()], read => {
+  await update([...configs,...skills,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : []),...(gitIgnore ? [gitIgnore] : []),settingsFile()], read => {
     const value = settings(read(settingsFile())), outputs = new Map();
+    if (localViewer) value.sessions[localViewerKey] = true;
     for (const file of configs) {
       const text = read(file), config = text === undefined ? {} : jsonDocument(text,file);
       if (!object(config) || (config.hooks !== undefined && !object(config.hooks)) ||
@@ -110,10 +129,14 @@ export async function installAutomatic({host = 'both'}) {
       outputs.set(claudeMcp,claudeConfig(read(claudeMcp),{'code-doctor':{type:'stdio',command:process.execPath,args:[entry,'mcp'],env:{}}},managed,claudeMcp));
       value.managed[claudeMcp] = managed['code-doctor'];
     }
+    if (gitIgnore) {
+      const current = read(gitIgnore) ?? '';
+      outputs.set(gitIgnore, current.split(/\r?\n/).includes('/.code-doctor/') ? current : current + (current && !current.endsWith('\n') ? '\n' : '') + '/.code-doctor/\n');
+    }
     outputs.set(settingsFile(),encode(value));
     return outputs;
   });
-  return {status:'installed-awaiting-host-activation',hosts,files:[...configs,...candidates,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : [])],
+  return {status:'installed-awaiting-host-activation',hosts,files:[...configs,...candidates,...(codexMcp ? [codexMcp] : []),...(claudeMcp ? [claudeMcp] : []),...(gitIgnore ? [gitIgnore] : [])],
     note:'Open a new session. Codex requires one-time review and trust of this hook via /hooks; installation cannot grant trust. Normal development prompts then receive guidance automatically. Existing opt-outs are preserved. Wrappers must load these user settings.'};
 }
 
@@ -129,6 +152,11 @@ export async function runAutomaticHook() {
     const cwd = await realpath(event.cwd);
     if (!(await lstat(cwd)).isDirectory()) return;
     const session = typeof event.session_id === 'string' ? event.session_id : undefined;
+    const remoteHint = ['SSH_CONNECTION','SSH_TTY','CODESPACES','REMOTE_CONTAINERS'].some(key => process.env[key]);
+    const viewerHint = remoteHint
+      ? '\nThis execution environment indicates a remote host. Do not automatically open or wait for a loopback viewer unless the person’s browser access has been confirmed; otherwise use the conversation fallback.'
+      : value.sessions[localViewerKey] === true ? '\nThe person confirmed this installation’s local viewer is reachable from their browser; use it if native feedback is unavailable.'
+      : '\nLocal viewer reachability has not been confirmed for this installation. Do not automatically open or wait for it; use the conversation fallback.';
     let repo;
     try { repo = await rootOf(cwd); } catch { /* The task may target a child or another repository. */ }
     const current = repo ? state(value,repo,session) : null;
@@ -141,7 +169,7 @@ Only when the person explicitly asks to re-enable the disabled scope, run ${comm
     }
     if (!repo) {
       const additionalContext = `[Code Doctor — discover the development repository]
-This conversation started outside a resolved Git repository. For development only, resolve the actual task repository from files you are working on; do not scan unrelated folders, guess from this installation, or ask for a path already known from the task. Before reading project source for Code Doctor or creating a review, run ${command('status')} --repo ABSOLUTE_TASK_REPO${session ? ' --session '+quote(session) : ''}. Honor disabled scopes. If enabled, read ${JSON.stringify(skill)} and apply it automatically in this same turn: establish the comparison and pre-existing changes before editing, then deliver the complete ordered guide with actual code at completion. If several repositories are involved, check each separately. Do not create a Git repository or project configuration for guidance. Stay quiet for non-development requests or when no task repository exists. Do not announce activation before status succeeds. A successful hook is not evidence that a guide was delivered. No browser, per-block approval, or extra model turn is required.`;
+This conversation started outside a resolved Git repository. For development only, resolve the actual task repository from files you are working on; do not scan unrelated folders, guess from this installation, or ask for a path already known from the task. Before reading project source for Code Doctor or creating a review, run ${command('status')} --repo ABSOLUTE_TASK_REPO${session ? ' --session '+quote(session) : ''}. Honor disabled scopes. If enabled, read ${JSON.stringify(skill)} and apply it automatically in this same turn: establish the comparison and pre-existing changes before editing, then deliver the complete ordered guide with actual code at completion. If several repositories are involved, check each separately. Do not create a Git repository or project configuration for guidance. Stay quiet for non-development requests or when no task repository exists. Do not announce activation before status succeeds. A successful hook is not evidence that a guide was delivered. Prefer usable native feedback; otherwise offer the local viewer and skip link only when the person can reach it and the connected agent can wait. No per-block approval or extra model turn is required.${viewerHint}`;
       process.stdout.write(encode({hookSpecificOutput:{hookEventName:'UserPromptSubmit',additionalContext}}));
       return;
     }
@@ -154,8 +182,8 @@ This conversation started outside a resolved Git repository. For development onl
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     const additionalContext = `[Code Doctor — automatic development guidance]
-For development work in ${JSON.stringify(repo)}, use Code Doctor automatically; the user need not name it. Read ${JSON.stringify(skill)} before editing. Establish the actual task repository, comparison commit, existing changes, request and relevant roadmap context. Before applying guidance, check status for every actual task repository, including the current session; the conversation directory is only a hint. Explain consequential scope changes during work, then present all ordered blocks with actual code together at completion. Before the final response, verify that all task changes are accounted for and that the response itself contains the guide with actual code; hook success or a saved guide alone is not delivery. Keep small work short; no per-block turns, browser, background model calls, or review-approval ritual. Stay quiet for unrelated questions and already-explained unchanged work. On first use in this conversation, briefly say guidance is enabled and can be turned off; do not repeat onboarding.
-Controls: ${command('status','--repo',repo,...(session ? ['--session',session] : []))}. If the user asks to turn guidance off/on, run the corresponding disable/enable command with --repo ${quote(repo)} and --scope repo (this repository), global (everywhere), or session --session ${quote(session ?? '')} (this conversation). For only this task/turn, honor the request in conversation without changing persistent preferences. Do not override a disabled scope, require Code Doctor invocation, or change files just to produce a review. Follow ordinary permission and merge rules.${submittedContext}`;
+For development work in ${JSON.stringify(repo)}, use Code Doctor automatically; the user need not name it. Read ${JSON.stringify(skill)} before editing. Establish the actual task repository, comparison commit, existing changes, request and relevant roadmap context. Before applying guidance, check status for every actual task repository, including the current session; the conversation directory is only a hint. Explain consequential scope changes during work, then present all ordered blocks with actual code together at completion. Before the final response, verify that all task changes are accounted for and that the response itself contains the guide with actual code; hook success or a saved guide alone is not delivery. Prefer usable native feedback; otherwise offer the local viewer and skip link only when the person can reach it and the connected agent can wait. Keep small work short; no per-block turns, background model calls, or review-approval ritual. Stay quiet for unrelated questions and already-explained unchanged work. On first use in this conversation, briefly say guidance is enabled and can be turned off; do not repeat onboarding.
+Controls: ${command('status','--repo',repo,...(session ? ['--session',session] : []))}. If the user asks to turn guidance off/on, run the corresponding disable/enable command with --repo ${quote(repo)} and --scope repo (this repository), global (everywhere), or session --session ${quote(session ?? '')} (this conversation). For only this task/turn, honor the request in conversation without changing persistent preferences. Do not override a disabled scope, require Code Doctor invocation, or change files just to produce a review. Follow ordinary permission and merge rules.${submittedContext}${viewerHint}`;
     process.stdout.write(encode({hookSpecificOutput:{hookEventName:'UserPromptSubmit',additionalContext}}));
   } catch { /* Optional guidance must not block development. */ }
 }

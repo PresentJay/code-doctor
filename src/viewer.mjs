@@ -6,6 +6,8 @@ import { EventEmitter } from 'node:events';
 
 const assets = new Map([
   ['/', ['../web/index.html', 'text/html; charset=utf-8']],
+  ['/skip.html', ['../web/skip.html', 'text/html; charset=utf-8']],
+  ['/skip.mjs', ['../web/skip.mjs', 'text/javascript; charset=utf-8']],
   ['/ui.js', ['../web/ui.js', 'text/javascript; charset=utf-8']],
   ['/shadcn.css', ['../web/shadcn.css', 'text/css; charset=utf-8']],
   ['/style.css', ['../web/style.css', 'text/css; charset=utf-8']],
@@ -56,9 +58,9 @@ export async function startReviewServer({cwd, service, port = 0, session} = {}) 
   const token = randomBytes(24).toString('hex');
   const events = new EventEmitter();
   let waitId = randomBytes(24).toString('hex');
-  let completion, waitingReviewId, waiting = false, finishing = false, consumed = false, closed = false;
+  let completion, waitingReviewId, waiting = false, finishing = false, consumed = false, closed = false, expired = false, reviewOpened = false;
   function prepareWait() {
-    if (consumed && !waiting) { waitId = randomBytes(24).toString('hex'); completion = undefined; consumed = false; }
+    if ((consumed || expired) && !waiting) { waitId = randomBytes(24).toString('hex'); completion = undefined; consumed = false; expired = false; reviewOpened = false; }
     return waitId;
   }
   async function waitForReview({id,reviewId,signal,timeoutMs}) {
@@ -66,10 +68,11 @@ export async function startReviewServer({cwd, service, port = 0, session} = {}) 
     if (waiting) throw new Error('This review already has a waiting agent.');
     if (closed) return {status:'closed'};
     waiting = true;
+    expired = false;
     waitingReviewId = reviewId;
     let timer, onComplete, onClose, onAbort;
     try {
-      if (signal?.aborted) return {status:'cancelled'};
+      if (signal?.aborted) { expired = true; return {status:'cancelled'}; }
       const receipt = completion ?? await new Promise(resolve => {
         onComplete = value => resolve(value);
         onClose = () => resolve({status:'closed'});
@@ -79,7 +82,11 @@ export async function startReviewServer({cwd, service, port = 0, session} = {}) 
         signal?.addEventListener('abort',onAbort,{once:true});
         timer = setTimeout(() => resolve({status:'timeout'}),timeoutMs);
       });
-      if (receipt.status) return receipt;
+      if (receipt.status) {
+        if (receipt.status === 'skipped') consumed = true;
+        else expired = true;
+        return receipt;
+      }
       consumed = true;
       const batch = await service.submitted({session});
       if (!batch || batch.id !== receipt.id || batch.reviewId !== reviewId || batch.status !== 'ready') return {status:'changed',reviewId:receipt.reviewId};
@@ -126,14 +133,21 @@ export async function startReviewServer({cwd, service, port = 0, session} = {}) 
         let result;
         try { result = await service.state({reviewId:url.searchParams.get('reviewId') ?? undefined}); }
         catch (error) { if (!url.search && error.message.startsWith('No review yet.')) result = empty(); else throw error; }
-        json(200, {...result, sessionBound:typeof session === 'string' && !!session.trim(), agentWaiting:waiting && waitingReviewId === result.review?.id, reviewFinished:!!completion || finishing});
+        reviewOpened = true;
+        json(200, {...result, sessionBound:typeof session === 'string' && !!session.trim(), agentWaiting:waiting && waitingReviewId === result.review?.id, reviewFinished:(!!completion && completion.status !== 'skipped') || finishing});
         return;
       }
-      if (!['/api/feedback','/api/submit','/api/finish','/api/recapture'].includes(url.pathname)) throw fail(404, 'not-found', 'Not found.');
+      if (!['/api/feedback','/api/submit','/api/finish','/api/recapture','/api/skip'].includes(url.pathname)) throw fail(404, 'not-found', 'Not found.');
       if (request.method !== 'POST') throw fail(405, 'invalid', 'Use POST.');
       if (url.search) throw fail(400, 'invalid', 'Unexpected query parameters.');
       const input = await body(request);
-      if (url.pathname === '/api/feedback') {
+      if (url.pathname === '/api/skip') {
+        if (Object.keys(input).join(',') !== 'waitId' || typeof input.waitId !== 'string') throw fail(400, 'invalid', 'Expected waitId.');
+        if (input.waitId !== waitId || consumed || expired || completion || finishing || reviewOpened) throw fail(409, 'stale', 'This review wait is no longer available; finish in the review screen if it is open.');
+        completion = {status:'skipped'};
+        events.emit('complete',completion);
+        json(200,{status:'skipped'});
+      } else if (url.pathname === '/api/feedback') {
         const fields = ['reviewId','blockId','text'];
         if (Object.keys(input).length !== fields.length || fields.some(key => typeof input[key] !== 'string') || Object.keys(input).some(key => !fields.includes(key))) throw fail(400, 'invalid', 'Expected reviewId, blockId and text strings.');
         json(200, await service.feedback(input));
