@@ -663,6 +663,14 @@ async function submitFeedback() {
     renderFeedback();
     const result = await api('/api/finish', {reviewId,items});
     finished = state.reviewFinished = true;
+    for (const saved of state.feedbacks ?? []) {
+      const key = `${reviewId}:${state.review.fingerprint ?? ''}:${saved.blockId}`;
+      if (items.some(item => item.id === saved.id && item.version === (saved.version ?? 1)) && drafts.get(key) === saved.text) drafts.delete(key);
+    }
+    if (!drafts.has(draftKey())) $('opinion').value = '';
+    try { sessionStorage.setItem(draftStorageKey, JSON.stringify([...drafts])); }
+    catch { draftStorageUnavailable = true; }
+    renderDraftStorageWarning();
     setStatus(result.waiting ? msg("Review complete. Check the original agent's response.") : msg("Review saved, but no agent was waiting. Ask the original agent to continue."), false, true);
   } catch (error) { setStatus(error.message, true, true); }
   finally { busy = false; updateFreshness(); }
