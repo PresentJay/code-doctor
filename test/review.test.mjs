@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, chmod, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, devNull } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { applyPlan, captureReview, recordFeedback, validateReview } from '../src/review.mjs';
@@ -12,6 +12,7 @@ async function fixture(t, message = 'Initial fixture') {
   const cwd = await mkdtemp(path.join(tmpdir(), 'code-doctor-test-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   git(cwd, 'init', '-q');
+  git(cwd, 'config', 'core.excludesFile', devNull);
   git(cwd, 'config', 'user.name', 'Code Doctor Test');
   git(cwd, 'config', 'user.email', 'test@example.invalid');
   await writeFile(path.join(cwd, '.gitignore'), '.code-doctor/\nignored.txt\n');

@@ -28,7 +28,7 @@ test('one installation preserves settings and its actual commands guide ordinary
   assert.equal(config.custom,'preserve');assert.deepEqual(config.hooks.Stop,[unrelated]);assert.deepEqual(config.hooks.UserPromptSubmit[0],unrelated);assert.equal(config.hooks.UserPromptSubmit.length,2);
   assert.equal((await stat(full)).mode & 0o777,0o640);
   const output=execFileSync('/bin/sh',['-c',config.hooks.UserPromptSubmit[1].hooks[0].command],{env:f.env,encoding:'utf8',input:JSON.stringify({hook_event_name:'UserPromptSubmit',cwd:f.repo,session_id:'abc',prompt:'Fix the total calculation'})});
-  const context=JSON.parse(output).hookSpecificOutput;assert.equal(context.hookEventName,'UserPromptSubmit');assert.match(context.additionalContext,/automatically/);assert.ok(context.additionalContext.includes(f.repo));
+  const context=JSON.parse(output).hookSpecificOutput;assert.equal(context.hookEventName,'UserPromptSubmit');assert.match(context.additionalContext,/automatically/);assert.ok(context.additionalContext.includes(f.repo));assert.match(context.additionalContext,/otherwise offer the local viewer/);
   f.cli('install');assert.equal(await readFile(full,'utf8'),text);
  }
  for(const host of ['.agents','.claude'])assert.match(await readFile(path.join(f.home,host,'skills/code-doctor/SKILL.md'),'utf8'),/Do not resolve a sibling launcher/);

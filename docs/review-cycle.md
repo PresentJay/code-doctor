@@ -1,6 +1,6 @@
 # Review cycle
 
-The agent prepares all behavior-based blocks once, using the same CLI/MCP service. The person reads in the existing conversation or a supported diff surface and sends several opinions together. A browser is optional and never a prerequisite.
+The agent prepares all behavior-based blocks once, using the same CLI/MCP service. The person reads in a supported native surface or the local viewer and sends several opinions together. If neither handoff is available, the agent presents the complete guide in the conversation and explains the limit.
 
 The [user-level skill installation](../README.md#install-from-source) reuses one CLI across projects. Resolve the actual working repository and pass `--repo` explicitly; verify private storage is ignored before saving. Project MCP setup is optional and can add machine-specific configuration files to Git's inventory. Do not run it just to read another project.
 
@@ -59,7 +59,7 @@ Resolve each opinion separately with its expected version, revised reviewId and 
 
 ## Optional viewer and storage
 
-When the person explicitly requests the local web viewer, run `serve --repo /path/to/project --session HOST_SESSION_ID` or MCP `open_review` with the actual host session ID from the hook. A request for visual review alone does not select the web viewer; prefer available native surfaces. Without a host ID, retain the private `handoffKey` returned to the opening agent; it identifies the viewer’s feedback and can be passed as `--session`. Keep the process alive; it listens on loopback and exposes no arbitrary file, source execution or merge endpoint. The fragment token grants local review API access and must not be published.
+When native feedback delivery is unavailable, offer the local viewer automatically if the connected agent can wait; the person may also request it explicitly. Use MCP `open_review` with the actual host session ID from the hook when available. A CLI `serve --repo /path/to/project --session HOST_SESSION_ID` alone has no waiting agent. Without a host ID, retain the private `handoffKey` returned to the opening agent; it identifies the viewer’s feedback and can be passed as `--session`. Keep the process alive; it listens on loopback and exposes no arbitrary file, source execution or merge endpoint. The fragment token grants local review API access and must not be published.
 
 Navigation, code expansion and language selection do not call a model. With a connected agent, call `open_review` with the person's preferred `lang` when known (`en`, `ko`, `ja`, or `zh-CN`), present the viewer, and call `wait_for_review` with the returned waitId and reviewId. Without `lang`, the viewer keeps its existing English fallback. Write opinions on any blocks and select **Finish review** once. The waiting call returns the exact batch, including an empty list if no corrections are requested. The agent can apply compatible feedback in the same turn. This does not wake an already stopped agent or authorize merge or deployment.
 

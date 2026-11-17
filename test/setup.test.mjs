@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, readdir, lstat, readlink, symlink, chmod } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, devNull } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -31,6 +31,7 @@ async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'code-doctor-setup-')));
   t.after(() => rm(root, { recursive: true, force: true }));
   git(root, 'init', '-q');
+  git(root, 'config', 'core.excludesFile', devNull);
   await put(root, '.gitignore', '.code-doctor/\n');
   return root;
 }
